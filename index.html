@@ -173,11 +173,11 @@ const KAREN_TREADMILL = [
     { weeks: [7,8,9,10,11,12], tier: 'Power Burn', duration: '30-40 min', incline: '6-10%', speed: '3.0 mph', sessions: 5 }
 ];
 
-const INVENTORY_ITEMS = [
-    'Retatrutide 20mg',
-    'Tirzepatide 10mg',
-    'MOTS-c 15mg',
-    'Diamond Glow 70mg'
+const DEFAULT_PEPTIDES = [
+    { name: 'Retatrutide', vialSize: '20mg' },
+    { name: 'Tirzepatide', vialSize: '10mg' },
+    { name: 'MOTS-c', vialSize: '15mg' },
+    { name: 'Glow Stack', vialSize: '70mg' }
 ];
 
 const NOGO_GRUMPY = [
@@ -217,6 +217,7 @@ function defaultState() {
                 noGoFoods: NOGO_GRUMPY,
                 warningThreshold: 4,
                 programStart: '2026-03-25',
+                currentDoses: { 'Retatrutide': 2, 'MOTS-c': 5, 'Glow Stack': 1 },
                 created: Date.now()
             },
             karen: {
@@ -228,13 +229,15 @@ function defaultState() {
                 noGoFoods: NOGO_KAREN,
                 warningThreshold: 2,
                 programStart: '2026-03-25',
+                currentDoses: { 'Tirzepatide': 1.25, 'MOTS-c': 5, 'Glow Stack': 1 },
                 created: Date.now()
             }
         },
         logs: {},
         lab: {
             mixedVials: [],
-            inventory: { 'Retatrutide 20mg': 0, 'Tirzepatide 10mg': 0, 'MOTS-c 15mg': 0, 'Diamond Glow 70mg': 0 }
+            peptides: DEFAULT_PEPTIDES.map(p => ({ ...p })),
+            inventory: DEFAULT_PEPTIDES.reduce((acc, p) => { acc[p.name + ' ' + p.vialSize] = 0; return acc; }, {})
         }
     };
 }
@@ -245,11 +248,20 @@ function loadState() {
         if (raw) {
             state = JSON.parse(raw);
             // Ensure lab structure exists for older data
-            if (!state.lab) state.lab = { mixedVials: [], inventory: {} };
+            if (!state.lab) state.lab = { mixedVials: [], inventory: {}, peptides: [] };
             if (!state.lab.mixedVials) state.lab.mixedVials = [];
             if (!state.lab.inventory) state.lab.inventory = {};
-            INVENTORY_ITEMS.forEach(item => {
-                if (state.lab.inventory[item] === undefined) state.lab.inventory[item] = 0;
+            if (!state.lab.peptides || state.lab.peptides.length === 0) {
+                state.lab.peptides = DEFAULT_PEPTIDES.map(p => ({ ...p }));
+            }
+            // Ensure inventory has a slot for every peptide
+            state.lab.peptides.forEach(p => {
+                const key = p.name + ' ' + p.vialSize;
+                if (state.lab.inventory[key] === undefined) state.lab.inventory[key] = 0;
+            });
+            // Ensure currentDoses exists on all users
+            Object.values(state.users).forEach(u => {
+                if (!u.currentDoses) u.currentDoses = {};
             });
         } else {
             state = defaultState();
@@ -546,22 +558,26 @@ function renderDashboard() {
         });
     }
 
-    // Dosing info
-    const activeVial = state.lab.mixedVials.find(v => v.assignedTo === currentUser && v.peptide === todaySched.peptide && !v.depleted);
-    if (activeVial) {
-        const units = calcUnits(activeVial.doseMg, activeVial.vialMg, activeVial.waterMl);
+    // Dosing info — find shared vial for this peptide + user's current dose
+    const activeVial = state.lab.mixedVials.find(v => v.peptide === todaySched.peptide && !v.depleted);
+    const userDose = user.currentDoses ? user.currentDoses[todaySched.peptide] : null;
+    if (activeVial && userDose) {
+        const units = calcUnits(userDose, activeVial.vialMg, activeVial.waterMl);
         const daysOld = daysSince(activeVial.mixedDate);
         const isExpiring = daysOld >= 25;
         const isExpired = daysOld > 28;
         html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 ${isExpired ? 'border-2 border-red-600 expiry-pulse' : isExpiring ? 'border border-yellow-600' : ''}">
             <div class="flex justify-between items-center">
-                <span class="text-gray-400 text-sm">Dose: ${activeVial.doseMg}mg</span>
+                <span class="text-gray-400 text-sm">Your dose: ${userDose}mg</span>
                 <span class="text-xl font-bold text-amber-400">Pull ${units} units</span>
             </div>
             ${isExpired ? '<div class="text-red-400 text-sm font-bold mt-1">&#x26A0; VIAL EXPIRED ('+daysOld+' days old) &mdash; REPLACE</div>' : isExpiring ? '<div class="text-yellow-400 text-sm mt-1">&#x26A0; Vial expires in '+(28-daysOld)+' day(s)</div>' : '<div class="text-gray-500 text-xs mt-1">Mixed '+daysOld+' day(s) ago</div>'}
         </div>`;
     } else if (todaySched.peptides && todaySched.peptides.length > 0 && todaySched.type !== 'rest') {
-        html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 text-gray-500 text-sm text-center">No active vial assigned &mdash; see Admin Lab</div>`;
+        const missing = [];
+        if (!activeVial) missing.push('no mixed vial');
+        if (!userDose) missing.push('dose not set');
+        html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 text-gray-500 text-sm text-center">Cannot calculate units (${missing.join(', ')}) &mdash; see Admin Lab</div>`;
     }
     html += '</div>';
 
@@ -679,7 +695,7 @@ function renderWarnings() {
         state.lab.mixedVials.forEach(v => {
             if (!v.depleted && daysSince(v.mixedDate) > 28) {
                 html += `<div class="bg-red-900/60 border border-red-700 rounded-xl p-3">
-                    <div class="font-bold text-red-400 text-sm">&#x26A0; ${v.peptide} vial for ${state.users[v.assignedTo]?.name || v.assignedTo} EXPIRED (${daysSince(v.mixedDate)} days)</div>
+                    <div class="font-bold text-red-400 text-sm">&#x26A0; ${v.peptide} vial (${v.vialMg}mg) EXPIRED &mdash; ${daysSince(v.mixedDate)} days old</div>
                 </div>`;
             }
         });
@@ -834,15 +850,13 @@ function renderLab() {
     // === MIX NEW VIAL ===
     html += `<div class="card">
         <div class="section-title">Mix a New Vial</div>
+        <p class="text-xs text-gray-500 mb-3">Reconstitute a vial from inventory. It enters the shared mixed pool.</p>
         <div class="space-y-3">
             <div>
                 <label class="label">Peptide</label>
                 <select class="input-field" id="vial-peptide">
                     <option value="">Select...</option>
-                    <option>Retatrutide</option>
-                    <option>Tirzepatide</option>
-                    <option>MOTS-c</option>
-                    <option>Glow Stack</option>
+                    ${state.lab.peptides.map(p => `<option>${p.name}</option>`).join('')}
                 </select>
             </div>
             <div class="grid grid-cols-2 gap-3">
@@ -855,18 +869,6 @@ function renderLab() {
                     <input type="number" inputmode="decimal" step="0.1" class="input-field" id="vial-water" placeholder="e.g. 2">
                 </div>
             </div>
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="label">Assign To</label>
-                    <select class="input-field" id="vial-assign">
-                        ${Object.values(state.users).map(u => `<option value="${u.id}">${u.name}</option>`).join('')}
-                    </select>
-                </div>
-                <div>
-                    <label class="label">Dose (mg)</label>
-                    <input type="number" inputmode="decimal" step="0.1" class="input-field" id="vial-dose" placeholder="e.g. 2.5">
-                </div>
-            </div>
             <div>
                 <label class="label">Date Mixed</label>
                 <input type="date" class="input-field" id="vial-date" value="${todayStr()}">
@@ -875,28 +877,26 @@ function renderLab() {
         </div>
     </div>`;
 
-    // === ACTIVE VIALS ===
+    // === ACTIVE MIXED VIALS ===
     html += `<div class="card">
         <div class="section-title">Active Mixed Vials</div>`;
     const active = state.lab.mixedVials.filter(v => !v.depleted);
     if (active.length === 0) {
-        html += `<div class="text-gray-600 text-sm text-center py-4">No active vials</div>`;
+        html += `<div class="text-gray-600 text-sm text-center py-4">No mixed vials yet</div>`;
     } else {
         active.forEach(v => {
             const age = daysSince(v.mixedDate);
             const isExpired = age > 28;
             const isExpiring = age >= 25;
-            const units = calcUnits(v.doseMg, v.vialMg, v.waterMl);
+            const concentration = (v.vialMg / (v.waterMl * 100)).toFixed(4);
             const totalUnits = v.waterMl * 100;
-            const unitsPerDose = parseFloat(units);
-            const estDoses = Math.floor(totalUnits / unitsPerDose);
 
             html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${isExpired ? 'border-2 border-red-600 expiry-pulse' : isExpiring ? 'border border-yellow-600' : 'border border-gray-700'}">
                 <div class="flex justify-between items-start">
                     <div>
                         <div class="font-bold text-white">${v.peptide}</div>
-                        <div class="text-xs text-gray-400">${v.vialMg}mg in ${v.waterMl}mL &bull; ${v.doseMg}mg/dose = ${units} units</div>
-                        <div class="text-xs text-gray-500">For: ${state.users[v.assignedTo]?.name || v.assignedTo} &bull; ~${estDoses} doses total</div>
+                        <div class="text-xs text-gray-400">${v.vialMg}mg reconstituted in ${v.waterMl}mL (${totalUnits} units)</div>
+                        <div class="text-xs text-gray-400">${concentration} mg/unit</div>
                         <div class="text-xs ${isExpired ? 'text-red-400 font-bold' : isExpiring ? 'text-yellow-400' : 'text-gray-500'}">
                             Mixed: ${formatDate(v.mixedDate)} (${age}d ago) ${isExpired ? '&mdash; EXPIRED' : isExpiring ? '&mdash; EXPIRING SOON' : ''}
                         </div>
@@ -908,7 +908,47 @@ function renderLab() {
     }
     html += '</div>';
 
-    // === INVENTORY ===
+    // === USER DOSE MANAGEMENT ===
+    html += `<div class="card">
+        <div class="section-title">User Dose Management</div>
+        <p class="text-xs text-gray-500 mb-3">Set each user's current dose per peptide. Adjust as you titrate (3-Week Rule: only increase if loss stalls 3 weeks).</p>`;
+    Object.values(state.users).forEach(u => {
+        const doses = u.currentDoses || {};
+        const peptideList = u.peptideType ? u.peptideType.split(' + ').map(s => s.trim()) : [];
+        // Peptides not yet on this user's regimen
+        const available = state.lab.peptides.filter(p => !peptideList.includes(p.name));
+        html += `<div class="bg-gray-800 rounded-lg p-3 mb-3">
+            <div class="font-bold text-amber-400 text-sm mb-2">${u.name}</div>
+            <div class="space-y-2">`;
+        peptideList.forEach(pep => {
+            const currentMg = doses[pep] || '';
+            const vial = state.lab.mixedVials.find(v => v.peptide === pep && !v.depleted);
+            const unitsPreview = (vial && currentMg) ? calcUnits(currentMg, vial.vialMg, vial.waterMl) + ' units' : '';
+            html += `<div class="flex items-center gap-2">
+                    <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0" title="Remove">&times;</button>
+                    <span class="text-xs text-gray-400 w-24 shrink-0">${pep}</span>
+                    <input type="number" inputmode="decimal" step="0.25" class="input-field text-sm py-2" style="max-width:90px"
+                        value="${currentMg}" placeholder="mg"
+                        onchange="updateUserDose('${u.id}','${pep}',this.value)">
+                    <span class="text-xs text-gray-500">mg</span>
+                    ${unitsPreview ? `<span class="text-xs text-amber-400 font-bold ml-auto">${unitsPreview}</span>` : '<span class="text-xs text-gray-600 ml-auto">no vial</span>'}
+                </div>`;
+        });
+        html += '</div>';
+        if (available.length > 0) {
+            html += `<div class="flex items-center gap-2 mt-3 pt-2 border-t border-gray-700">
+                <select class="input-field text-sm py-2 flex-1" id="add-pep-${u.id}">
+                    <option value="">Add peptide...</option>
+                    ${available.map(p => `<option value="${p.name}">${p.name}</option>`).join('')}
+                </select>
+                <button onclick="addUserPeptide('${u.id}')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95">+</button>
+            </div>`;
+        }
+        html += '</div>';
+    });
+    html += '</div>';
+
+    // === UNMIXED INVENTORY ===
     html += `<div class="card">
         <div class="section-title">Unmixed Vial Inventory</div>
         <div class="space-y-3">`;
@@ -924,26 +964,27 @@ function renderLab() {
     });
     html += '</div></div>';
 
-    // === DOSE MANAGEMENT ===
+    // === MANAGE PEPTIDES ===
     html += `<div class="card">
-        <div class="section-title">User Dose Summary</div>`;
-    Object.values(state.users).forEach(u => {
-        const vials = state.lab.mixedVials.filter(v => v.assignedTo === u.id && !v.depleted);
-        html += `<div class="bg-gray-800 rounded-lg p-3 mb-2">
-            <div class="font-bold text-amber-400 text-sm mb-1">${u.name}</div>`;
-        if (vials.length === 0) {
-            html += `<div class="text-gray-600 text-xs">No active vials assigned</div>`;
-        } else {
-            vials.forEach(v => {
-                html += `<div class="flex justify-between text-xs text-gray-400">
-                    <span>${v.peptide}</span>
-                    <span>${v.doseMg}mg = ${calcUnits(v.doseMg, v.vialMg, v.waterMl)} units</span>
-                </div>`;
-            });
-        }
-        html += '</div>';
+        <div class="section-title">Manage Peptide Types</div>
+        <p class="text-xs text-gray-500 mb-3">Add or remove peptide types available across the app.</p>
+        <div class="space-y-2 mb-3">`;
+    state.lab.peptides.forEach(p => {
+        html += `<div class="flex items-center justify-between bg-gray-800 rounded-lg p-3">
+            <div>
+                <span class="text-sm text-gray-200 font-medium">${p.name}</span>
+                <span class="text-xs text-gray-500 ml-2">Vial: ${p.vialSize}</span>
+            </div>
+            <button onclick="removePeptideType('${p.name}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1 transition" title="Remove">&times;</button>
+        </div>`;
     });
-    html += '</div>';
+    html += `</div>
+        <div class="flex gap-2">
+            <input type="text" class="input-field text-sm py-2 flex-1" id="new-pep-name" placeholder="Peptide name">
+            <input type="text" class="input-field text-sm py-2" style="max-width:80px" id="new-pep-size" placeholder="e.g. 10mg">
+            <button onclick="addPeptideType()" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition active:scale-95 shrink-0">Add</button>
+        </div>
+    </div>`;
 
     document.getElementById('lab-content').innerHTML = html;
 }
@@ -975,11 +1016,9 @@ function mixVial() {
     const peptide = document.getElementById('vial-peptide').value;
     const mg = parseFloat(document.getElementById('vial-mg').value);
     const water = parseFloat(document.getElementById('vial-water').value);
-    const assign = document.getElementById('vial-assign').value;
-    const dose = parseFloat(document.getElementById('vial-dose').value);
     const date = document.getElementById('vial-date').value;
 
-    if (!peptide || !mg || !water || !assign || !dose || !date) {
+    if (!peptide || !mg || !water || !date) {
         alert('Please fill in all fields.');
         return;
     }
@@ -987,7 +1026,6 @@ function mixVial() {
     state.lab.mixedVials.push({
         id: generateId(),
         peptide, vialMg: mg, waterMl: water,
-        assignedTo: assign, doseMg: dose,
         mixedDate: date, depleted: false
     });
 
@@ -1005,6 +1043,65 @@ function depleteVial(id) {
     if (!confirm('Mark this vial as depleted/empty?')) return;
     const vial = state.lab.mixedVials.find(v => v.id === id);
     if (vial) vial.depleted = true;
+    saveState();
+    renderLab();
+}
+
+function addPeptideType() {
+    const name = document.getElementById('new-pep-name').value.trim();
+    const size = document.getElementById('new-pep-size').value.trim();
+    if (!name || !size) { alert('Enter both a name and vial size.'); return; }
+    if (state.lab.peptides.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+        alert('That peptide already exists.');
+        return;
+    }
+    state.lab.peptides.push({ name, vialSize: size });
+    const invKey = name + ' ' + size;
+    if (state.lab.inventory[invKey] === undefined) state.lab.inventory[invKey] = 0;
+    saveState();
+    renderLab();
+}
+
+function removePeptideType(name) {
+    if (!confirm(`Remove "${name}" from the peptide list? This won't delete mixed vials or user doses already set.`)) return;
+    state.lab.peptides = state.lab.peptides.filter(p => p.name !== name);
+    saveState();
+    renderLab();
+}
+
+function addUserPeptide(userId) {
+    const sel = document.getElementById('add-pep-' + userId);
+    if (!sel || !sel.value) return;
+    const user = state.users[userId];
+    if (!user) return;
+    const current = user.peptideType ? user.peptideType.split(' + ').map(s => s.trim()) : [];
+    current.push(sel.value);
+    user.peptideType = current.join(' + ');
+    if (!user.currentDoses) user.currentDoses = {};
+    saveState();
+    renderLab();
+}
+
+function removeUserPeptide(userId, peptide) {
+    const user = state.users[userId];
+    if (!user) return;
+    const current = user.peptideType ? user.peptideType.split(' + ').map(s => s.trim()) : [];
+    user.peptideType = current.filter(p => p !== peptide).join(' + ');
+    if (user.currentDoses) delete user.currentDoses[peptide];
+    saveState();
+    renderLab();
+}
+
+function updateUserDose(userId, peptide, value) {
+    const user = state.users[userId];
+    if (!user) return;
+    if (!user.currentDoses) user.currentDoses = {};
+    const mg = parseFloat(value);
+    if (mg > 0) {
+        user.currentDoses[peptide] = mg;
+    } else {
+        delete user.currentDoses[peptide];
+    }
     saveState();
     renderLab();
 }
@@ -1168,13 +1265,11 @@ function showAddUserForm() {
                 </div>
             </div>
             <div>
-                <label class="label">Peptide Type</label>
+                <label class="label">Primary Peptide</label>
                 <select class="input-field" id="new-peptide">
-                    <option>Retatrutide</option>
-                    <option>Tirzepatide</option>
-                    <option>Semaglutide</option>
-                    <option>Other</option>
+                    ${state.lab.peptides.map(p => `<option>${p.name}</option>`).join('')}
                 </select>
+                <p class="text-xs text-gray-500 mt-1">More peptides can be added to their regimen later in the Lab.</p>
             </div>
             <button onclick="addNewUser()" class="btn-primary mt-2">Add User</button>
             <button onclick="closeModal()" class="btn-secondary">Cancel</button>
@@ -1378,7 +1473,6 @@ function deleteUser(id) {
     if (!confirm(`Delete ${state.users[id]?.name || id} and all their data? This cannot be undone.`)) return;
     delete state.users[id];
     delete state.logs[id];
-    state.lab.mixedVials = state.lab.mixedVials.filter(v => v.assignedTo !== id);
     saveState();
     closeModal();
     renderUserSelect();
