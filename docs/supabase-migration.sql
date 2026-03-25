@@ -12,23 +12,7 @@
 -- =====================================================
 
 -- =====================================================
--- HELPER FUNCTION
--- =====================================================
-
-create or replace function public.is_admin()
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select coalesce(
-    (select is_admin from public.profiles where id = auth.uid()),
-    false
-  );
-$$;
-
--- =====================================================
--- TABLES
+-- TABLES (must be created before the helper function)
 -- =====================================================
 
 create table public.profiles (
@@ -88,6 +72,22 @@ create table public.inventory (
     item_name  text unique not null,
     count      integer default 0
 );
+
+-- =====================================================
+-- HELPER FUNCTION (created after tables exist)
+-- =====================================================
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select is_admin from public.profiles where id = auth.uid()),
+    false
+  );
+$$;
 
 -- =====================================================
 -- ROW LEVEL SECURITY
