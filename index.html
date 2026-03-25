@@ -6,6 +6,7 @@
     <title>Peptide Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * { -webkit-tap-highlight-color: transparent; }
         body { overscroll-behavior: none; }
@@ -32,28 +33,27 @@
         .label { font-size: 0.875rem; font-weight: 500; color: rgb(156 163 175); margin-bottom: 0.25rem; display: block; }
         .section-title { font-size: 0.75rem; font-weight: 600; color: rgb(107 114 128); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
         select.input-field { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239ca3af' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; padding-right: 2.5rem; }
+        .spinner { width: 2rem; height: 2rem; border: 2px solid rgb(245 158 11); border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-100 font-sans">
 <div id="app" class="max-w-lg mx-auto min-h-screen relative">
 
-    <!-- ==================== USER SELECT SCREEN ==================== -->
-    <div id="screen-select" class="p-6 flex flex-col items-center justify-center min-h-screen fade-in">
+    <!-- ==================== AUTH SCREEN ==================== -->
+    <div id="screen-auth" class="p-6 flex flex-col items-center justify-center min-h-screen fade-in">
         <div class="text-center mb-10">
             <div class="text-5xl mb-3">&#x1F9EA;</div>
             <h1 class="text-3xl font-bold text-amber-500">Peptide Command Center</h1>
-            <p class="text-gray-500 mt-2 text-sm">Select your profile to continue</p>
+            <p class="text-gray-500 mt-2 text-sm">Sign in to continue</p>
         </div>
-        <div id="user-buttons" class="w-full space-y-4"></div>
-        <button onclick="promptPasscode('addUser')" class="mt-8 text-gray-600 hover:text-amber-400 transition text-sm font-medium py-2 px-4">
-            + Add New User
-        </button>
+        <div id="auth-form" class="w-full space-y-4"></div>
     </div>
 
     <!-- ==================== DASHBOARD SCREEN ==================== -->
     <div id="screen-dashboard" class="hidden fade-in">
         <div class="sticky top-0 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800 px-4 py-3 flex items-center justify-between z-40">
-            <button onclick="showScreen('select')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
+            <div id="dash-avatar" class="w-8 h-8 bg-amber-900/50 rounded-full flex items-center justify-center text-amber-400 font-bold text-sm"></div>
             <div class="text-center">
                 <h2 id="dash-username" class="text-lg font-bold text-amber-500"></h2>
                 <p id="dash-date" class="text-xs text-gray-500"></p>
@@ -105,12 +105,24 @@
     </div>
 </div>
 
-<!-- Hidden file input for import -->
-<input type="file" id="import-input" accept=".json" class="hidden" onchange="handleImport(event)">
-
 <script>
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    1. CONSTANTS                             ║
+// ║                 1. SUPABASE CONFIG                          ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+// *** PASTE YOUR SUPABASE CREDENTIALS HERE ***
+const SUPABASE_URL  = 'https://dyclhfmqhpogevecenxx.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Y2xoZm1xaHBvZ2V2ZWNlbnh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0MTI5NjMsImV4cCI6MjA4OTk4ODk2M30.rEc1LdZsAcqQFs9mVHTYKvIUg0PNTbi5yFYnP129Pig';
+const ADMIN_EMAIL   = 'grumpy94303@gmail.com';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+function isAdmin(profile) {
+    return profile?.is_admin || (currentSession?.user?.email === ADMIN_EMAIL);
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║                 2. CONSTANTS                                ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -136,33 +148,35 @@ const KAREN_SCHEDULE = {
     6: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill' }
 };
 
+const GENERIC_SCHEDULE = {
+    0: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
+    1: { peptide: 'Primary Peptide', peptides: ['Primary'], workout: 'Exercise', type: 'training' },
+    2: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' },
+    3: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
+    4: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' },
+    5: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
+    6: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' }
+};
+
 const GRUMPY_CALISTHENICS = [
     { week: 1, name: 'Foundation', exercises: [
-        { name: 'Wall Push-ups', detail: '3 x 10' },
-        { name: 'Chair-Assisted Squats', detail: '3 x 10' },
-        { name: 'Plank Hold', detail: '3 x 20s' },
-        { name: 'Standing Band Rows', detail: '3 x 10' },
+        { name: 'Wall Push-ups', detail: '3 x 10' }, { name: 'Chair-Assisted Squats', detail: '3 x 10' },
+        { name: 'Plank Hold', detail: '3 x 20s' }, { name: 'Standing Band Rows', detail: '3 x 10' },
         { name: 'Dead Bugs', detail: '2 x 8 each side' }
     ]},
     { week: 2, name: 'Build', exercises: [
-        { name: 'Incline Push-ups', detail: '3 x 10' },
-        { name: 'Bodyweight Squats', detail: '3 x 12' },
-        { name: 'Plank Hold', detail: '3 x 30s' },
-        { name: 'Band Rows', detail: '3 x 12' },
+        { name: 'Incline Push-ups', detail: '3 x 10' }, { name: 'Bodyweight Squats', detail: '3 x 12' },
+        { name: 'Plank Hold', detail: '3 x 30s' }, { name: 'Band Rows', detail: '3 x 12' },
         { name: 'Bird Dogs', detail: '2 x 10 each side' }
     ]},
     { week: 3, name: 'Progress', exercises: [
-        { name: 'Knee Push-ups', detail: '3 x 8' },
-        { name: 'Squats', detail: '3 x 15' },
-        { name: 'Walking Lunges', detail: '3 x 10/leg' },
-        { name: 'Plank Hold', detail: '3 x 40s' },
+        { name: 'Knee Push-ups', detail: '3 x 8' }, { name: 'Squats', detail: '3 x 15' },
+        { name: 'Walking Lunges', detail: '3 x 10/leg' }, { name: 'Plank Hold', detail: '3 x 40s' },
         { name: 'Band Rows', detail: '3 x 15' }
     ]},
     { week: 4, name: 'Push', exercises: [
-        { name: 'Push-ups (full or knee)', detail: '3 x 10' },
-        { name: 'Jump Squats', detail: '3 x 10' },
-        { name: 'Walking Lunges', detail: '3 x 12/leg' },
-        { name: 'Plank Hold', detail: '3 x 45s' },
+        { name: 'Push-ups (full or knee)', detail: '3 x 10' }, { name: 'Jump Squats', detail: '3 x 10' },
+        { name: 'Walking Lunges', detail: '3 x 12/leg' }, { name: 'Plank Hold', detail: '3 x 45s' },
         { name: 'Burpees', detail: '2 x 5' }
     ]}
 ];
@@ -173,13 +187,6 @@ const KAREN_TREADMILL = [
     { weeks: [7,8,9,10,11,12], tier: 'Power Burn', duration: '30-40 min', incline: '6-10%', speed: '3.0 mph', sessions: 5 }
 ];
 
-const DEFAULT_PEPTIDES = [
-    { name: 'Retatrutide', vialSize: '20mg' },
-    { name: 'Tirzepatide', vialSize: '10mg' },
-    { name: 'MOTS-c', vialSize: '15mg' },
-    { name: 'Glow Stack', vialSize: '70mg' }
-];
-
 const NOGO_GRUMPY = [
     { icon: '&#x1F35F;', text: 'Fried Foods' },
     { icon: '&#x1F95B;', text: 'Carbonated Drinks' },
@@ -188,7 +195,7 @@ const NOGO_GRUMPY = [
 ];
 
 const NOGO_KAREN = [
-    { icon: '&#x26A0;&#xFE0F;', text: 'SPINACH — ALLERGY (use Bok Choy, Romaine, Cabbage)', alert: true },
+    { icon: '&#x26A0;&#xFE0F;', text: 'SPINACH \u2014 ALLERGY (use Bok Choy, Romaine, Cabbage)', alert: true },
     { icon: '&#x1F35F;', text: 'Fried Foods' },
     { icon: '&#x1F95B;', text: 'Carbonated Drinks' },
     { icon: '&#x1F36D;', text: 'Liquid Sugar (juice, soda, sweet tea)' },
@@ -196,205 +203,273 @@ const NOGO_KAREN = [
 ];
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    2. STATE MANAGEMENT                      ║
+// ║                 3. STATE                                    ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-const STORAGE_KEY = 'peptide_cc';
-let state = {};
-let currentUser = null;
+let currentSession = null;
+let currentProfile = null;
+let todayLog = null;       // cached today log for current user
+let cachedVials = [];      // active mixed vials
+let cachedPeptideTypes = [];
+let cachedInventory = [];
 let weightChart = null;
 
-function defaultState() {
-    return {
-        passcode: '1002',
-        users: {
-            grumpy: {
-                id: 'grumpy', name: 'Grumpy', realName: 'Miguel', isAdmin: true,
-                startWeight: 297, goalWeight: 207,
-                calorieTarget: 2150, proteinMin: 190, proteinMax: 210,
-                fiberTarget: 30, waterTarget: 120,
-                peptideType: 'Retatrutide + MOTS-c + Glow Stack',
-                noGoFoods: NOGO_GRUMPY,
-                warningThreshold: 4,
-                programStart: '2026-03-25',
-                currentDoses: { 'Retatrutide': 2, 'MOTS-c': 5, 'Glow Stack': 1 },
-                created: Date.now()
-            },
-            karen: {
-                id: 'karen', name: 'Karen', isAdmin: false,
-                startWeight: 130, goalWeight: 115,
-                calorieTarget: 1200, proteinMin: 90, proteinMax: 100,
-                fiberTarget: 0, waterTarget: 80,
-                peptideType: 'Tirzepatide + MOTS-c + Glow Stack',
-                noGoFoods: NOGO_KAREN,
-                warningThreshold: 2,
-                programStart: '2026-03-25',
-                currentDoses: { 'Tirzepatide': 1.25, 'MOTS-c': 5, 'Glow Stack': 1 },
-                created: Date.now()
-            }
-        },
-        logs: {},
-        lab: {
-            mixedVials: [],
-            peptides: DEFAULT_PEPTIDES.map(p => ({ ...p })),
-            inventory: DEFAULT_PEPTIDES.reduce((acc, p) => { acc[p.name + ' ' + p.vialSize] = 0; return acc; }, {})
-        }
-    };
-}
-
-function loadState() {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-            state = JSON.parse(raw);
-            // Ensure lab structure exists for older data
-            if (!state.lab) state.lab = { mixedVials: [], inventory: {}, peptides: [] };
-            if (!state.lab.mixedVials) state.lab.mixedVials = [];
-            if (!state.lab.inventory) state.lab.inventory = {};
-            if (!state.lab.peptides || state.lab.peptides.length === 0) {
-                state.lab.peptides = DEFAULT_PEPTIDES.map(p => ({ ...p }));
-            }
-            // Ensure inventory has a slot for every peptide
-            state.lab.peptides.forEach(p => {
-                const key = p.name + ' ' + p.vialSize;
-                if (state.lab.inventory[key] === undefined) state.lab.inventory[key] = 0;
-            });
-            // Ensure currentDoses exists on all users
-            Object.values(state.users).forEach(u => {
-                if (!u.currentDoses) u.currentDoses = {};
-            });
-        } else {
-            state = defaultState();
-            saveState();
-        }
-    } catch (e) {
-        console.error('Failed to load state:', e);
-        state = defaultState();
-    }
-}
-
-function saveState() {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (e) {
-        console.error('Failed to save state:', e);
-    }
-}
-
-function getLog(userId, date) {
-    if (!state.logs[userId]) state.logs[userId] = {};
-    if (!state.logs[userId][date]) state.logs[userId][date] = { calories: '', protein: '', weight: '', water: '', fiber: '', shots: {}, workout: { completed: false, notes: '' } };
-    return state.logs[userId][date];
-}
-
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    3. UTILITIES                             ║
+// ║                 4. UTILITIES                                ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 function todayStr() { return new Date().toISOString().split('T')[0]; }
 function dayOfWeek() { return new Date().getDay(); }
+function formatDate(str) { return new Date(str+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
+function formatDateLong(str) { return new Date(str+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}); }
+function formatDateShort(str) { const d=new Date(str+'T12:00:00'); return (d.getMonth()+1)+'/'+d.getDate(); }
+function daysSince(dateStr) { const t=new Date(dateStr+'T12:00:00'),n=new Date();n.setHours(12,0,0,0); return Math.floor((n-t)/86400000); }
+function calcUnits(doseMg,vialMg,waterMl) { if(!vialMg||!waterMl||!doseMg)return 0; return((doseMg/vialMg)*waterMl*100).toFixed(1); }
 
-function formatDate(str) {
-    const d = new Date(str + 'T12:00:00');
-    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+function weekNum(profile) {
+    if (!profile || !profile.program_start) return 1;
+    return Math.max(1, Math.floor(daysSince(profile.program_start) / 7) + 1);
 }
 
-function formatDateLong(str) {
-    const d = new Date(str + 'T12:00:00');
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+function getSchedule(profile) {
+    const n = (profile?.display_name || '').toLowerCase();
+    if (n === 'grumpy' || n === 'miguel') return GRUMPY_SCHEDULE;
+    if (n === 'karen') return KAREN_SCHEDULE;
+    return GENERIC_SCHEDULE;
 }
 
-function formatDateShort(str) {
-    const d = new Date(str + 'T12:00:00');
-    return (d.getMonth()+1) + '/' + d.getDate();
+function profileIs(profile, name) {
+    return (profile?.display_name || '').toLowerCase() === name.toLowerCase();
 }
 
-function daysSince(dateStr) {
-    const then = new Date(dateStr + 'T12:00:00');
-    const now = new Date();
-    now.setHours(12,0,0,0);
-    return Math.floor((now - then) / 86400000);
+function showLoading(id) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="flex items-center justify-center py-16"><div class="spinner"></div></div>';
 }
 
-function weekNumber(userId) {
-    const user = state.users[userId];
-    if (!user || !user.programStart) return 1;
-    const days = daysSince(user.programStart);
-    return Math.max(1, Math.floor(days / 7) + 1);
-}
-
-function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
-
-function isShotLogged(userId, peptide) {
-    const log = getLog(userId, todayStr());
-    if (!log.shots || !log.shots[peptide]) return false;
-    const ts = new Date(log.shots[peptide]);
-    return (Date.now() - ts.getTime()) < 86400000;
-}
-
-function getSchedule(userId) {
-    if (userId === 'grumpy') return GRUMPY_SCHEDULE;
-    if (userId === 'karen') return KAREN_SCHEDULE;
-    // Custom users get a generic schedule
-    return {
-        0: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
-        1: { peptide: 'Primary Peptide', peptides: ['Primary'], workout: 'Exercise', type: 'training' },
-        2: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' },
-        3: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
-        4: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' },
-        5: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
-        6: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' }
+function getProfileDefaults(displayName) {
+    const n = displayName.toLowerCase().trim();
+    if (n === 'grumpy' || n === 'miguel') return {
+        start_weight: 297, goal_weight: 207, calorie_target: 2150, protein_min: 190, protein_max: 210,
+        fiber_target: 30, water_target: 120, peptide_type: 'Retatrutide + MOTS-c + Glow Stack',
+        no_go_foods: NOGO_GRUMPY, warning_threshold: 4, program_start: '2026-03-25',
+        current_doses: { 'Retatrutide': 2, 'MOTS-c': 5, 'Glow Stack': 1 }
     };
-}
-
-function getWeeklyLossRate(userId) {
-    const logs = state.logs[userId] || {};
-    const entries = Object.entries(logs)
-        .filter(([_, l]) => l.weight && parseFloat(l.weight) > 0)
-        .sort(([a], [b]) => a.localeCompare(b));
-    if (entries.length < 2) return null;
-    const recent = entries.slice(-7);
-    if (recent.length < 2) return null;
-    const first = parseFloat(recent[0][1].weight);
-    const last = parseFloat(recent[recent.length - 1][1].weight);
-    const daysBetween = daysSince(recent[0][0]) - daysSince(recent[recent.length - 1][0]);
-    const actualDays = Math.abs((new Date(recent[recent.length-1][0]+'T12:00:00') - new Date(recent[0][0]+'T12:00:00')) / 86400000);
-    if (actualDays < 3) return null;
-    return ((first - last) / actualDays) * 7;
-}
-
-function getLatestWeight(userId) {
-    const logs = state.logs[userId] || {};
-    const entries = Object.entries(logs)
-        .filter(([_, l]) => l.weight && parseFloat(l.weight) > 0)
-        .sort(([a], [b]) => b.localeCompare(a));
-    return entries.length > 0 ? parseFloat(entries[0][1].weight) : null;
-}
-
-function calcUnits(doseMg, vialMg, waterMl) {
-    if (!vialMg || !waterMl || !doseMg) return 0;
-    return ((doseMg / vialMg) * waterMl * 100).toFixed(1);
+    if (n === 'karen') return {
+        start_weight: 130, goal_weight: 115, calorie_target: 1200, protein_min: 90, protein_max: 100,
+        fiber_target: 0, water_target: 80, peptide_type: 'Tirzepatide + MOTS-c + Glow Stack',
+        no_go_foods: NOGO_KAREN, warning_threshold: 2, program_start: '2026-03-25',
+        current_doses: { 'Tirzepatide': 1.25, 'MOTS-c': 5, 'Glow Stack': 1 }
+    };
+    return { start_weight: null, goal_weight: null, calorie_target: 2000, protein_min: 120, protein_max: 150,
+        fiber_target: 0, water_target: 80, peptide_type: '', no_go_foods: [], warning_threshold: 2,
+        program_start: todayStr(), current_doses: {} };
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    4. NAVIGATION                            ║
+// ║                 5. SUPABASE DATA LAYER                      ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+async function fetchProfile() {
+    const { data, error } = await sb.from('profiles').select('*').eq('id', currentSession.user.id).maybeSingle();
+    if (error) throw error;
+    if (!data) {
+        const dn = currentSession.user.user_metadata?.display_name || 'User';
+        const defaults = getProfileDefaults(dn);
+        const { data: created, error: e2 } = await sb.from('profiles').insert({ id: currentSession.user.id, display_name: dn, ...defaults }).select().single();
+        if (e2) throw e2;
+        return created;
+    }
+    return data;
+}
+
+async function fetchAllProfiles() {
+    const { data, error } = await sb.from('profiles').select('*');
+    if (error) throw error;
+    return data || [];
+}
+
+async function updateProfileField(profileId, updates) {
+    const { error } = await sb.from('profiles').update(updates).eq('id', profileId);
+    if (error) throw error;
+    if (profileId === currentSession.user.id) currentProfile = { ...currentProfile, ...updates };
+}
+
+async function ensureTodayLog() {
+    if (todayLog && todayLog.log_date === todayStr()) return todayLog;
+    const { data, error } = await sb.from('daily_logs').select('*')
+        .eq('user_id', currentSession.user.id).eq('log_date', todayStr()).maybeSingle();
+    if (error) throw error;
+    todayLog = data || { user_id: currentSession.user.id, log_date: todayStr(), calories: null, protein: null, weight: null, water: null, fiber: null, shots: {}, workout: { completed: false, notes: '' } };
+    return todayLog;
+}
+
+async function upsertTodayLog() {
+    const log = todayLog;
+    const payload = {
+        user_id: log.user_id, log_date: log.log_date,
+        calories: log.calories, protein: log.protein, weight: log.weight,
+        water: log.water, fiber: log.fiber, shots: log.shots, workout: log.workout,
+        updated_at: new Date().toISOString()
+    };
+    const { data, error } = await sb.from('daily_logs').upsert(payload, { onConflict: 'user_id,log_date' }).select().single();
+    if (error) throw error;
+    todayLog = data;
+}
+
+async function fetchWeightHistory() {
+    const { data, error } = await sb.from('daily_logs').select('log_date, weight')
+        .eq('user_id', currentSession.user.id).not('weight', 'is', null).gt('weight', 0)
+        .order('log_date', { ascending: true });
+    if (error) throw error;
+    return data || [];
+}
+
+async function fetchRecentLogs(limit = 14) {
+    const { data, error } = await sb.from('daily_logs').select('*')
+        .eq('user_id', currentSession.user.id).order('log_date', { ascending: false }).limit(limit);
+    if (error) throw error;
+    return data || [];
+}
+
+async function computeWeeklyLossRate() {
+    const { data, error } = await sb.from('daily_logs').select('log_date, weight')
+        .eq('user_id', currentSession.user.id).not('weight', 'is', null).gt('weight', 0)
+        .order('log_date', { ascending: false }).limit(7);
+    if (error || !data || data.length < 2) return null;
+    const sorted = [...data].sort((a, b) => a.log_date.localeCompare(b.log_date));
+    const first = parseFloat(sorted[0].weight), last = parseFloat(sorted[sorted.length - 1].weight);
+    const d = Math.abs((new Date(sorted[sorted.length-1].log_date+'T12:00:00') - new Date(sorted[0].log_date+'T12:00:00')) / 86400000);
+    if (d < 3) return null;
+    return ((first - last) / d) * 7;
+}
+
+async function fetchLatestWeight() {
+    const { data, error } = await sb.from('daily_logs').select('weight')
+        .eq('user_id', currentSession.user.id).not('weight', 'is', null).gt('weight', 0)
+        .order('log_date', { ascending: false }).limit(1).maybeSingle();
+    if (error) return null;
+    return data ? parseFloat(data.weight) : null;
+}
+
+async function fetchActiveVials() {
+    const { data, error } = await sb.from('mixed_vials').select('*').eq('depleted', false).order('mixed_date', { ascending: false });
+    if (error) throw error;
+    cachedVials = data || [];
+    return cachedVials;
+}
+
+async function fetchAllVials() {
+    const { data, error } = await sb.from('mixed_vials').select('*').order('mixed_date', { ascending: false });
+    if (error) throw error;
+    return data || [];
+}
+
+async function insertVial(peptide, vialMg, waterMl, mixedDate) {
+    const { error } = await sb.from('mixed_vials').insert({ peptide, vial_mg: vialMg, water_ml: waterMl, mixed_date: mixedDate });
+    if (error) throw error;
+}
+
+async function markVialDepleted(id) {
+    const { error } = await sb.from('mixed_vials').update({ depleted: true }).eq('id', id);
+    if (error) throw error;
+}
+
+async function fetchPeptideTypes() {
+    const { data, error } = await sb.from('peptide_types').select('*').order('name');
+    if (error) throw error;
+    cachedPeptideTypes = data || [];
+    return cachedPeptideTypes;
+}
+
+async function insertPeptideType(name, vialSize) {
+    const { error } = await sb.from('peptide_types').insert({ name, vial_size: vialSize });
+    if (error) throw error;
+}
+
+async function deletePeptideType(id) {
+    const { error } = await sb.from('peptide_types').delete().eq('id', id);
+    if (error) throw error;
+}
+
+async function fetchInventory() {
+    const { data, error } = await sb.from('inventory').select('*').order('item_name');
+    if (error) throw error;
+    cachedInventory = data || [];
+    return cachedInventory;
+}
+
+async function setInventoryCount(id, count) {
+    const { error } = await sb.from('inventory').update({ count: Math.max(0, count) }).eq('id', id);
+    if (error) throw error;
+}
+
+async function upsertInventoryItem(itemName, count) {
+    const { error } = await sb.from('inventory').upsert({ item_name: itemName, count }, { onConflict: 'item_name' });
+    if (error) throw error;
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║                 6. AUTH                                     ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+async function handleSignIn() {
+    const email = document.getElementById('auth-email').value.trim();
+    const pw = document.getElementById('auth-pw').value;
+    if (!email || !pw) { alert('Enter email and password.'); return; }
+    setBtnLoading('auth-btn', true);
+    try {
+        const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+        if (error) throw error;
+    } catch (e) { alert(e.message); }
+    setBtnLoading('auth-btn', false);
+}
+
+async function handleSignUp() {
+    const email = document.getElementById('auth-email').value.trim();
+    const pw = document.getElementById('auth-pw').value;
+    const name = document.getElementById('auth-name').value.trim();
+    if (!email || !pw || !name) { alert('Fill in all fields.'); return; }
+    setBtnLoading('auth-btn', true);
+    try {
+        const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { display_name: name } } });
+        if (error) throw error;
+        if (data.user) {
+            const defaults = getProfileDefaults(name);
+            await sb.from('profiles').insert({ id: data.user.id, display_name: name, ...defaults });
+        }
+    } catch (e) { alert(e.message); }
+    setBtnLoading('auth-btn', false);
+}
+
+async function handleLogout() {
+    await sb.auth.signOut();
+    currentSession = null; currentProfile = null; todayLog = null;
+    showScreen('auth');
+}
+
+function setBtnLoading(id, loading) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    if (loading) { btn.dataset.origText = btn.textContent; btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:1.2rem;height:1.2rem;border-width:2px;margin:0 auto"></div>'; }
+    else { btn.disabled = false; btn.textContent = btn.dataset.origText || 'Submit'; }
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║                 7. NAVIGATION                               ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 function showScreen(name) {
     document.querySelectorAll('#app > div').forEach(el => el.classList.add('hidden'));
     const screen = document.getElementById('screen-' + name);
-    if (screen) {
-        screen.classList.remove('hidden');
-        screen.classList.add('fade-in');
-    }
-
-    if (name === 'select') { currentUser = null; renderUserSelect(); }
-    if (name === 'dashboard') renderDashboard();
-    if (name === 'lab') renderLab();
-    if (name === 'workout') renderWorkoutPlan();
-    if (name === 'settings') renderSettings();
-
+    if (screen) { screen.classList.remove('hidden'); screen.classList.add('fade-in'); }
     window.scrollTo(0, 0);
+
+    if (name === 'auth') renderAuthForm();
+    if (name === 'dashboard') loadDashboard();
+    if (name === 'lab') loadLab();
+    if (name === 'workout') renderWorkoutPlan();
+    if (name === 'settings') loadSettings();
 }
 
 function showModal(html) {
@@ -402,1089 +477,672 @@ function showModal(html) {
     document.getElementById('modal-overlay').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
 }
-
 function closeModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
     document.body.style.overflow = '';
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    5. USER SELECT SCREEN                    ║
+// ║                 8. AUTH SCREEN                              ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function renderUserSelect() {
-    const container = document.getElementById('user-buttons');
-    let html = '';
-    Object.values(state.users).forEach(user => {
-        const icon = user.isAdmin ? '&#x1F451;' : '&#x1F496;';
-        const weightInfo = getLatestWeight(user.id);
-        const subtitle = weightInfo
-            ? `${weightInfo} lbs &rarr; ${user.goalWeight} lbs`
-            : `Goal: ${user.goalWeight} lbs`;
-        html += `
-        <button onclick="${user.isAdmin ? `promptPasscode('login','${user.id}')` : `selectUser('${user.id}')`}"
-            class="w-full bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-amber-600/50 rounded-2xl p-5 flex items-center gap-4 transition-all active:scale-[0.97]">
-            <div class="text-4xl">${icon}</div>
-            <div class="text-left flex-1">
-                <div class="text-xl font-bold text-white">${user.name}</div>
-                <div class="text-sm text-gray-400">${subtitle}</div>
-            </div>
-            <div class="text-gray-600 text-2xl">&rsaquo;</div>
+let authMode = 'login';
+
+function renderAuthForm() {
+    const isSignUp = authMode === 'signup';
+    document.getElementById('auth-form').innerHTML = `
+        ${isSignUp ? `<div><label class="label">Display Name</label><input type="text" class="input-field" id="auth-name" placeholder="e.g. Grumpy, Karen"></div>` : ''}
+        <div><label class="label">Email</label><input type="email" class="input-field" id="auth-email" placeholder="you@example.com"></div>
+        <div><label class="label">Password</label><input type="password" class="input-field" id="auth-pw" placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"></div>
+        <button id="auth-btn" onclick="${isSignUp ? 'handleSignUp()' : 'handleSignIn()'}" class="btn-primary">${isSignUp ? 'Create Account' : 'Sign In'}</button>
+        <button onclick="authMode='${isSignUp ? 'login' : 'signup'}';renderAuthForm()" class="w-full text-center text-sm text-gray-500 hover:text-amber-400 transition py-2">
+            ${isSignUp ? 'Already have an account? Sign In' : 'New user? Create Account'}
         </button>`;
-    });
-    container.innerHTML = html;
-}
-
-function selectUser(userId) {
-    currentUser = userId;
-    showScreen('dashboard');
-}
-
-function promptPasscode(action, userId) {
-    let pinValue = '';
-    const html = `
-        <div class="text-center">
-            <h3 class="text-xl font-bold text-white mb-1">Enter Admin Passcode</h3>
-            <p class="text-gray-500 text-sm mb-6">4-digit PIN required</p>
-            <div id="pin-display" class="flex justify-center gap-3 mb-6">
-                ${[0,1,2,3].map(i => `<div class="w-12 h-14 bg-gray-800 border border-gray-700 rounded-lg flex items-center justify-center text-2xl font-bold text-amber-500" id="pin-dot-${i}">&middot;</div>`).join('')}
-            </div>
-            <p id="pin-error" class="text-red-500 text-sm mb-4 hidden">Wrong passcode</p>
-            <div class="grid grid-cols-3 gap-3 max-w-[240px] mx-auto">
-                ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="pinInput('${n}','${action}','${userId||''}')" class="h-14 bg-gray-800 hover:bg-gray-700 rounded-xl text-xl font-bold text-white transition active:scale-95">${n}</button>`).join('')}
-                <button onclick="pinClear()" class="h-14 bg-gray-800 hover:bg-gray-700 rounded-xl text-sm font-bold text-gray-400 transition active:scale-95">CLR</button>
-                <button onclick="pinInput('0','${action}','${userId||''}')" class="h-14 bg-gray-800 hover:bg-gray-700 rounded-xl text-xl font-bold text-white transition active:scale-95">0</button>
-                <button onclick="pinBackspace()" class="h-14 bg-gray-800 hover:bg-gray-700 rounded-xl text-xl font-bold text-gray-400 transition active:scale-95">&larr;</button>
-            </div>
-        </div>`;
-    showModal(html);
-    window._pinValue = '';
-    window._pinAction = action;
-    window._pinUserId = userId || '';
-}
-
-function pinInput(digit, action, userId) {
-    if (window._pinValue.length >= 4) return;
-    window._pinValue += digit;
-    updatePinDisplay();
-    if (window._pinValue.length === 4) {
-        setTimeout(() => checkPasscode(), 150);
-    }
-}
-
-function pinBackspace() {
-    window._pinValue = window._pinValue.slice(0, -1);
-    updatePinDisplay();
-    document.getElementById('pin-error').classList.add('hidden');
-}
-
-function pinClear() {
-    window._pinValue = '';
-    updatePinDisplay();
-    document.getElementById('pin-error').classList.add('hidden');
-}
-
-function updatePinDisplay() {
-    for (let i = 0; i < 4; i++) {
-        const dot = document.getElementById('pin-dot-' + i);
-        if (dot) dot.innerHTML = i < window._pinValue.length ? '&#x2022;' : '&middot;';
-    }
-}
-
-function checkPasscode() {
-    if (window._pinValue === state.passcode) {
-        closeModal();
-        if (window._pinAction === 'login') selectUser(window._pinUserId);
-        else if (window._pinAction === 'addUser') showAddUserForm();
-        else if (window._pinAction === 'changePasscode') showChangePasscodeForm();
-    } else {
-        document.getElementById('pin-error').classList.remove('hidden');
-        window._pinValue = '';
-        updatePinDisplay();
-    }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    6. DASHBOARD                             ║
+// ║                 9. DASHBOARD                                ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function renderDashboard() {
-    if (!currentUser) return;
-    const user = state.users[currentUser];
-    if (!user) return;
+async function loadDashboard() {
+    if (!currentProfile) return;
+    const p = currentProfile;
 
-    document.getElementById('dash-username').textContent = user.name;
+    document.getElementById('dash-avatar').textContent = (p.display_name || '?')[0].toUpperCase();
+    document.getElementById('dash-username').textContent = p.display_name;
     document.getElementById('dash-date').textContent = formatDateLong(todayStr());
-
     const labBtn = document.getElementById('btn-lab');
-    if (user.isAdmin) labBtn.classList.remove('hidden');
-    else labBtn.classList.add('hidden');
+    if (isAdmin(p)) labBtn.classList.remove('hidden'); else labBtn.classList.add('hidden');
 
-    const log = getLog(currentUser, todayStr());
-    const schedule = getSchedule(currentUser);
+    showLoading('dash-content');
+    try {
+        const [log, vials, weightHist, rate, latestW] = await Promise.all([
+            ensureTodayLog(), fetchActiveVials(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight()
+        ]);
+        renderDashboard(p, log, vials, weightHist, rate, latestW);
+    } catch (e) {
+        document.getElementById('dash-content').innerHTML = `<div class="text-center py-12 text-red-400">${e.message}</div>`;
+    }
+}
+
+function renderDashboard(p, log, vials, weightHist, rate, latestW) {
+    const schedule = getSchedule(p);
     const todaySched = schedule[dayOfWeek()];
-    const wk = weekNumber(currentUser);
-
+    const wk = weekNum(p);
     let html = '';
 
     // === WARNINGS ===
-    html += renderWarnings();
+    if (latestW !== null && latestW < 150 && rate !== null && rate > 2) {
+        html += `<div class="bg-red-900/60 border-2 border-red-600 rounded-xl p-4 expiry-pulse">
+            <div class="font-bold text-red-400 text-lg">&#x26A0; Gaunt Check Warning</div>
+            <div class="text-red-300 text-sm mt-1">Losing ${rate.toFixed(1)} lbs/week at ${latestW} lbs. Increase calories by 150 kcal to protect muscle and collagen.</div>
+        </div>`;
+    }
+    if (rate !== null && rate > p.warning_threshold) {
+        html += `<div class="bg-yellow-900/50 border border-yellow-600 rounded-xl p-4">
+            <div class="font-bold text-yellow-400">&#x26A0; Losing Too Fast</div>
+            <div class="text-yellow-300 text-sm mt-1">Rate: ${rate.toFixed(1)} lbs/week (threshold: ${p.warning_threshold}). Increase calories.</div>
+        </div>`;
+    }
+    if (isAdmin(p)) {
+        vials.forEach(v => {
+            if (daysSince(v.mixed_date) > 28) {
+                html += `<div class="bg-red-900/60 border border-red-700 rounded-xl p-3">
+                    <div class="font-bold text-red-400 text-sm">&#x26A0; ${v.peptide} vial (${v.vial_mg}mg) EXPIRED &mdash; ${daysSince(v.mixed_date)} days old</div>
+                </div>`;
+            }
+        });
+    }
 
     // === TODAY'S PROTOCOL ===
     html += `<div class="card">
         <div class="section-title">Today's Protocol &mdash; ${DAYS[dayOfWeek()]}</div>
         <div class="flex items-center gap-3 mb-3">
-            <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg ${todaySched.type === 'rest' ? 'bg-gray-800' : todaySched.type === 'training' || todaySched.type === 'treadmill' ? 'bg-blue-900/60' : todaySched.type === 'walk' ? 'bg-green-900/60' : 'bg-purple-900/60'}">
-                ${todaySched.type === 'rest' ? '&#x1F634;' : todaySched.type === 'training' || todaySched.type === 'treadmill' ? '&#x1F4AA;' : todaySched.type === 'walk' ? '&#x1F6B6;' : '&#x2728;'}
+            <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg ${todaySched.type==='rest'?'bg-gray-800':todaySched.type==='training'||todaySched.type==='treadmill'?'bg-blue-900/60':todaySched.type==='walk'?'bg-green-900/60':'bg-purple-900/60'}">
+                ${todaySched.type==='rest'?'&#x1F634;':todaySched.type==='training'||todaySched.type==='treadmill'?'&#x1F4AA;':todaySched.type==='walk'?'&#x1F6B6;':'&#x2728;'}
             </div>
-            <div>
-                <div class="font-bold text-white">${todaySched.peptide}</div>
-                <div class="text-sm text-gray-400">${todaySched.workout}</div>
-            </div>
+            <div><div class="font-bold text-white">${todaySched.peptide}</div><div class="text-sm text-gray-400">${todaySched.workout}</div></div>
         </div>`;
 
-    // Shot buttons
     if (todaySched.peptides && todaySched.peptides.length > 0) {
-        todaySched.peptides.forEach(pep => {
-            // Only show shot button for injectable peptides (not sub-components of Glow if it's one vial)
-            const logged = isShotLogged(currentUser, todaySched.peptide);
-            // Use the group name for shot logging
-            if (pep === todaySched.peptides[0]) {
-                html += `<button onclick="logShot('${todaySched.peptide}')"
-                    class="w-full py-4 rounded-xl text-lg font-bold transition-all active:scale-[0.97] flex items-center justify-center gap-3 mt-2 ${logged ? 'bg-emerald-700 text-white' : 'bg-amber-600 hover:bg-amber-500 text-white'}">
-                    ${logged ? '&#x2705; Shot Logged' : '&#x1F489; Log Shot &mdash; ' + todaySched.peptide}
-                </button>`;
-            }
-        });
+        const shots = log.shots || {};
+        const logged = !!shots[todaySched.peptide] && (Date.now() - new Date(shots[todaySched.peptide]).getTime()) < 86400000;
+        html += `<button onclick="logShot('${todaySched.peptide}')"
+            class="w-full py-4 rounded-xl text-lg font-bold transition-all active:scale-[0.97] flex items-center justify-center gap-3 mt-2 ${logged?'bg-emerald-700 text-white':'bg-amber-600 hover:bg-amber-500 text-white'}">
+            ${logged ? '&#x2705; Shot Logged' : '&#x1F489; Log Shot &mdash; ' + todaySched.peptide}
+        </button>`;
     }
 
-    // Dosing info — find shared vial for this peptide + user's current dose
-    const activeVial = state.lab.mixedVials.find(v => v.peptide === todaySched.peptide && !v.depleted);
-    const userDose = user.currentDoses ? user.currentDoses[todaySched.peptide] : null;
+    const activeVial = vials.find(v => v.peptide === todaySched.peptide);
+    const userDose = p.current_doses ? p.current_doses[todaySched.peptide] : null;
     if (activeVial && userDose) {
-        const units = calcUnits(userDose, activeVial.vialMg, activeVial.waterMl);
-        const daysOld = daysSince(activeVial.mixedDate);
-        const isExpiring = daysOld >= 25;
-        const isExpired = daysOld > 28;
-        html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 ${isExpired ? 'border-2 border-red-600 expiry-pulse' : isExpiring ? 'border border-yellow-600' : ''}">
+        const units = calcUnits(userDose, activeVial.vial_mg, activeVial.water_ml);
+        const age = daysSince(activeVial.mixed_date), expiring = age >= 25, expired = age > 28;
+        html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':''}">
             <div class="flex justify-between items-center">
                 <span class="text-gray-400 text-sm">Your dose: ${userDose}mg</span>
                 <span class="text-xl font-bold text-amber-400">Pull ${units} units</span>
             </div>
-            ${isExpired ? '<div class="text-red-400 text-sm font-bold mt-1">&#x26A0; VIAL EXPIRED ('+daysOld+' days old) &mdash; REPLACE</div>' : isExpiring ? '<div class="text-yellow-400 text-sm mt-1">&#x26A0; Vial expires in '+(28-daysOld)+' day(s)</div>' : '<div class="text-gray-500 text-xs mt-1">Mixed '+daysOld+' day(s) ago</div>'}
+            ${expired?'<div class="text-red-400 text-sm font-bold mt-1">&#x26A0; VIAL EXPIRED ('+age+'d) &mdash; REPLACE</div>':expiring?'<div class="text-yellow-400 text-sm mt-1">&#x26A0; Expires in '+(28-age)+' day(s)</div>':'<div class="text-gray-500 text-xs mt-1">Mixed '+age+' day(s) ago</div>'}
         </div>`;
-    } else if (todaySched.peptides && todaySched.peptides.length > 0 && todaySched.type !== 'rest') {
-        const missing = [];
-        if (!activeVial) missing.push('no mixed vial');
-        if (!userDose) missing.push('dose not set');
-        html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 text-gray-500 text-sm text-center">Cannot calculate units (${missing.join(', ')}) &mdash; see Admin Lab</div>`;
+    } else if (todaySched.peptides?.length > 0 && todaySched.type !== 'rest') {
+        const m = []; if(!activeVial)m.push('no mixed vial'); if(!userDose)m.push('dose not set');
+        html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 text-gray-500 text-sm text-center">Cannot calculate units (${m.join(', ')}) &mdash; see Admin Lab</div>`;
     }
     html += '</div>';
 
     // === MACRO TRACKER ===
-    html += `<div class="card">
-        <div class="section-title">Daily Tracking</div>
-        <div class="grid grid-cols-2 gap-3">
-            <div>
-                <label class="label">Calories <span class="text-amber-500">(${user.calorieTarget})</span></label>
-                <input type="number" inputmode="numeric" class="input-field" id="input-cal" value="${log.calories}" placeholder="${user.calorieTarget}" onchange="saveDailyField('calories', this.value)">
-            </div>
-            <div>
-                <label class="label">Protein (g) <span class="text-amber-500">(${user.proteinMin}-${user.proteinMax})</span></label>
-                <input type="number" inputmode="numeric" class="input-field" id="input-protein" value="${log.protein}" placeholder="${user.proteinMin}" onchange="saveDailyField('protein', this.value)">
-            </div>
-            <div>
-                <label class="label">Water (oz) <span class="text-amber-500">(${user.waterTarget})</span></label>
-                <input type="number" inputmode="numeric" class="input-field" id="input-water" value="${log.water}" placeholder="${user.waterTarget}" onchange="saveDailyField('water', this.value)">
-            </div>
-            ${user.fiberTarget ? `<div>
-                <label class="label">Fiber (g) <span class="text-amber-500">(${user.fiberTarget}+)</span></label>
-                <input type="number" inputmode="numeric" class="input-field" id="input-fiber" value="${log.fiber}" placeholder="${user.fiberTarget}" onchange="saveDailyField('fiber', this.value)">
-            </div>` : `<div>
-                <label class="label">Weight (lbs)</label>
-                <input type="number" inputmode="decimal" step="0.1" class="input-field" id="input-weight-inline" value="${log.weight}" placeholder="Current" onchange="saveDailyField('weight', this.value)">
-            </div>`}
-        </div>
-        ${user.fiberTarget ? `<div class="mt-3">
-            <label class="label">Weight (lbs)</label>
-            <input type="number" inputmode="decimal" step="0.1" class="input-field" id="input-weight" value="${log.weight}" placeholder="Step on the scale..." onchange="saveDailyField('weight', this.value)">
-        </div>` : ''}
+    html += `<div class="card"><div class="section-title">Daily Tracking</div><div class="grid grid-cols-2 gap-3">
+        <div><label class="label">Calories <span class="text-amber-500">(${p.calorie_target})</span></label>
+            <input type="number" inputmode="numeric" class="input-field" value="${log.calories||''}" placeholder="${p.calorie_target}" onchange="saveDailyField('calories',this.value)"></div>
+        <div><label class="label">Protein (g) <span class="text-amber-500">(${p.protein_min}-${p.protein_max})</span></label>
+            <input type="number" inputmode="numeric" class="input-field" value="${log.protein||''}" placeholder="${p.protein_min}" onchange="saveDailyField('protein',this.value)"></div>
+        <div><label class="label">Water (oz) <span class="text-amber-500">(${p.water_target})</span></label>
+            <input type="number" inputmode="numeric" class="input-field" value="${log.water||''}" placeholder="${p.water_target}" onchange="saveDailyField('water',this.value)"></div>
+        ${p.fiber_target ? `<div><label class="label">Fiber (g) <span class="text-amber-500">(${p.fiber_target}+)</span></label>
+            <input type="number" inputmode="numeric" class="input-field" value="${log.fiber||''}" placeholder="${p.fiber_target}" onchange="saveDailyField('fiber',this.value)"></div>` :
+        `<div><label class="label">Weight (lbs)</label>
+            <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Current" onchange="saveDailyField('weight',this.value)"></div>`}
+    </div>
+    ${p.fiber_target ? `<div class="mt-3"><label class="label">Weight (lbs)</label>
+        <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Step on the scale..." onchange="saveDailyField('weight',this.value)"></div>` : ''}
     </div>`;
 
     // === WORKOUT ===
-    html += `<div class="card">
-        <div class="section-title">Workout &mdash; Week ${Math.min(wk, currentUser === 'karen' ? 12 : 4)}</div>`;
-
-    if (currentUser === 'grumpy') {
-        if (todaySched.type === 'training') {
-            const weekIdx = Math.min(wk, 4) - 1;
-            const plan = GRUMPY_CALISTHENICS[weekIdx];
+    const capWk = profileIs(p,'karen') ? Math.min(wk,12) : Math.min(wk,4);
+    html += `<div class="card"><div class="section-title">Workout &mdash; Week ${capWk}</div>`;
+    if (profileIs(p,'grumpy')) {
+        if (todaySched.type==='training') {
+            const plan = GRUMPY_CALISTHENICS[Math.min(wk,4)-1];
             html += `<div class="text-sm text-amber-400 font-semibold mb-2">${plan.name}</div>
-                <div class="space-y-1 mb-3">${plan.exercises.map(e => `<div class="flex justify-between text-sm"><span class="text-gray-300">${e.name}</span><span class="text-gray-500">${e.detail}</span></div>`).join('')}</div>`;
-        } else if (todaySched.type === 'walk') {
-            html += `<div class="text-gray-300 mb-3">&#x1F6B6; 45-minute brisk walk &mdash; keep a steady pace</div>`;
-        } else {
-            html += `<div class="text-gray-300 mb-3">&#x1F9D8; Recovery day &mdash; easy walk + stretching/core</div>`;
-        }
-    } else if (currentUser === 'karen') {
-        const tier = KAREN_TREADMILL.find(t => t.weeks.includes(Math.min(wk, 12))) || KAREN_TREADMILL[2];
-        if (todaySched.type === 'treadmill') {
+                <div class="space-y-1 mb-3">${plan.exercises.map(e=>`<div class="flex justify-between text-sm"><span class="text-gray-300">${e.name}</span><span class="text-gray-500">${e.detail}</span></div>`).join('')}</div>`;
+        } else if (todaySched.type==='walk') { html += '<div class="text-gray-300 mb-3">&#x1F6B6; 45-minute brisk walk</div>'; }
+        else { html += '<div class="text-gray-300 mb-3">&#x1F9D8; Recovery day &mdash; easy walk + stretching/core</div>'; }
+    } else if (profileIs(p,'karen')) {
+        const tier = KAREN_TREADMILL.find(t=>t.weeks.includes(Math.min(wk,12))) || KAREN_TREADMILL[2];
+        if (todaySched.type==='treadmill') {
             html += `<div class="text-sm text-amber-400 font-semibold mb-2">${tier.tier} Phase</div>
                 <div class="grid grid-cols-2 gap-2 mb-3 text-sm">
                     <div class="bg-gray-800 rounded-lg p-2 text-center"><div class="text-gray-500">Duration</div><div class="text-white font-bold">${tier.duration}</div></div>
                     <div class="bg-gray-800 rounded-lg p-2 text-center"><div class="text-gray-500">Incline</div><div class="text-white font-bold">${tier.incline}</div></div>
                     <div class="bg-gray-800 rounded-lg p-2 text-center"><div class="text-gray-500">Speed</div><div class="text-white font-bold">${tier.speed}</div></div>
                     <div class="bg-gray-800 rounded-lg p-2 text-center"><div class="text-gray-500">Sessions/wk</div><div class="text-white font-bold">${tier.sessions}x</div></div>
-                </div>
-                <div class="text-xs text-gray-500 mb-3">&#x1F9BA; 8 lb weighted vest &bull; No handrails</div>`;
-        } else {
-            html += `<div class="text-gray-300 mb-3">&#x1F9D8; Rest day &mdash; recovery and hydration focus</div>`;
-        }
-    } else {
-        html += `<div class="text-gray-300 mb-3">${todaySched.workout}</div>`;
-    }
+                </div><div class="text-xs text-gray-500 mb-3">&#x1F9BA; 8 lb weighted vest &bull; No handrails</div>`;
+        } else { html += '<div class="text-gray-300 mb-3">&#x1F9D8; Rest day</div>'; }
+    } else { html += `<div class="text-gray-300 mb-3">${todaySched.workout}</div>`; }
 
-    const workoutDone = log.workout && log.workout.completed;
-    html += `<button onclick="toggleWorkout()" class="w-full py-3 rounded-xl font-bold transition-all active:scale-[0.97] ${workoutDone ? 'bg-emerald-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}">
-            ${workoutDone ? '&#x2705; Workout Complete' : '&#x25CB; Mark Workout Complete'}
-        </button>
-        <button onclick="showScreen('workout')" class="w-full mt-2 py-2 text-sm text-gray-500 hover:text-amber-400 transition">View Full Plan &rarr;</button>
-    </div>`;
+    const done = log.workout && log.workout.completed;
+    html += `<button onclick="toggleWorkout()" class="w-full py-3 rounded-xl font-bold transition-all active:scale-[0.97] ${done?'bg-emerald-700 text-white':'bg-gray-700 hover:bg-gray-600 text-white'}">
+        ${done ? '&#x2705; Workout Complete' : '&#x25CB; Mark Workout Complete'}</button>
+        <button onclick="showScreen('workout')" class="w-full mt-2 py-2 text-sm text-gray-500 hover:text-amber-400 transition">View Full Plan &rarr;</button></div>`;
 
     // === WEIGHT CHART ===
-    html += `<div class="card">
-        <div class="section-title">Weight Progress</div>
-        <div class="relative" style="height: 200px;"><canvas id="weight-chart"></canvas></div>
-        <div class="flex justify-between text-xs text-gray-500 mt-2">
-            <span>Start: ${user.startWeight} lbs</span>
-            <span>Goal: ${user.goalWeight} lbs</span>
-        </div>
-    </div>`;
+    html += `<div class="card"><div class="section-title">Weight Progress</div>
+        <div class="relative" style="height:200px"><canvas id="weight-chart"></canvas></div>
+        <div class="flex justify-between text-xs text-gray-500 mt-2"><span>Start: ${p.start_weight||'?'} lbs</span><span>Goal: ${p.goal_weight||'?'} lbs</span></div></div>`;
 
     document.getElementById('dash-content').innerHTML = html;
-
-    // Render chart after DOM update
-    setTimeout(() => renderWeightChart(), 50);
-}
-
-function renderWarnings() {
-    if (!currentUser) return '';
-    const user = state.users[currentUser];
-    let html = '';
-
-    // Gaunt Check: under 150 lbs + losing > 2 lbs/week
-    const weight = getLatestWeight(currentUser);
-    const rate = getWeeklyLossRate(currentUser);
-    if (weight !== null && weight < 150 && rate !== null && rate > 2) {
-        html += `<div class="bg-red-900/60 border-2 border-red-600 rounded-xl p-4 expiry-pulse">
-            <div class="font-bold text-red-400 text-lg">&#x26A0; Gaunt Check Warning</div>
-            <div class="text-red-300 text-sm mt-1">Losing ${rate.toFixed(1)} lbs/week at ${weight} lbs. Consider increasing calories by 150 kcal to protect muscle and collagen.</div>
-        </div>`;
-    }
-
-    // General over-loss warning
-    if (rate !== null && rate > user.warningThreshold) {
-        html += `<div class="bg-yellow-900/50 border border-yellow-600 rounded-xl p-4">
-            <div class="font-bold text-yellow-400">&#x26A0; Losing Too Fast</div>
-            <div class="text-yellow-300 text-sm mt-1">Rate: ${rate.toFixed(1)} lbs/week (threshold: ${user.warningThreshold}). Increase calories to prevent muscle wasting.</div>
-        </div>`;
-    }
-
-    // Expired vials for admin
-    if (user.isAdmin) {
-        state.lab.mixedVials.forEach(v => {
-            if (!v.depleted && daysSince(v.mixedDate) > 28) {
-                html += `<div class="bg-red-900/60 border border-red-700 rounded-xl p-3">
-                    <div class="font-bold text-red-400 text-sm">&#x26A0; ${v.peptide} vial (${v.vialMg}mg) EXPIRED &mdash; ${daysSince(v.mixedDate)} days old</div>
-                </div>`;
-            }
-        });
-    }
-
-    return html;
+    setTimeout(() => renderWeightChart(p, weightHist), 50);
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    7. DAILY LOGGING                         ║
+// ║                 10. DAILY LOGGING                           ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function saveDailyField(field, value) {
-    const log = getLog(currentUser, todayStr());
-    log[field] = value;
-    saveState();
+async function saveDailyField(field, value) {
+    try {
+        await ensureTodayLog();
+        todayLog[field] = value ? parseFloat(value) : null;
+        await upsertTodayLog();
+    } catch (e) { alert('Save error: ' + e.message); }
 }
 
-function logShot(peptide) {
-    const log = getLog(currentUser, todayStr());
-    if (!log.shots) log.shots = {};
-    if (isShotLogged(currentUser, peptide)) {
-        // Already logged; confirm un-log
-        if (confirm('Shot already logged. Undo?')) {
-            delete log.shots[peptide];
-            saveState();
-            renderDashboard();
+async function logShot(peptide) {
+    try {
+        await ensureTodayLog();
+        if (!todayLog.shots) todayLog.shots = {};
+        if (todayLog.shots[peptide] && (Date.now() - new Date(todayLog.shots[peptide]).getTime()) < 86400000) {
+            if (!confirm('Shot already logged. Undo?')) return;
+            delete todayLog.shots[peptide];
+        } else {
+            todayLog.shots[peptide] = new Date().toISOString();
         }
-        return;
-    }
-    log.shots[peptide] = new Date().toISOString();
-    saveState();
-    renderDashboard();
+        await upsertTodayLog();
+        await loadDashboard();
+    } catch (e) { alert('Error: ' + e.message); }
 }
 
-function toggleWorkout() {
-    const log = getLog(currentUser, todayStr());
-    if (!log.workout) log.workout = { completed: false, notes: '' };
-    log.workout.completed = !log.workout.completed;
-    saveState();
-    renderDashboard();
+async function toggleWorkout() {
+    try {
+        await ensureTodayLog();
+        if (!todayLog.workout) todayLog.workout = { completed: false, notes: '' };
+        todayLog.workout = { ...todayLog.workout, completed: !todayLog.workout.completed };
+        await upsertTodayLog();
+        await loadDashboard();
+    } catch (e) { alert('Error: ' + e.message); }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    8. WEIGHT CHART                          ║
+// ║                 11. WEIGHT CHART                            ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function renderWeightChart() {
+function renderWeightChart(profile, entries) {
     const canvas = document.getElementById('weight-chart');
     if (!canvas) return;
     if (weightChart) { weightChart.destroy(); weightChart = null; }
-
-    const user = state.users[currentUser];
-    const logs = state.logs[currentUser] || {};
-    const entries = Object.entries(logs)
-        .filter(([_, l]) => l.weight && parseFloat(l.weight) > 0)
-        .sort(([a], [b]) => a.localeCompare(b));
-
-    if (entries.length < 1) {
+    if (!entries || entries.length < 1) {
         canvas.parentElement.innerHTML = '<div class="flex items-center justify-center h-full text-gray-600 text-sm">Log your weight to see the chart</div>';
         return;
     }
-
-    const labels = entries.map(([d]) => formatDateShort(d));
-    const data = entries.map(([_, l]) => parseFloat(l.weight));
-    const goalData = Array(data.length).fill(user.goalWeight);
-
+    const labels = entries.map(e => formatDateShort(e.log_date));
+    const data = entries.map(e => parseFloat(e.weight));
+    const goal = Array(data.length).fill(profile.goal_weight);
     weightChart = new Chart(canvas, {
         type: 'line',
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: 'Weight',
-                    data,
-                    borderColor: '#f59e0b',
-                    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-                    fill: true,
-                    tension: 0.3,
-                    pointRadius: data.length > 30 ? 0 : 4,
-                    pointBackgroundColor: '#f59e0b',
-                    borderWidth: 2
-                },
-                {
-                    label: 'Goal',
-                    data: goalData,
-                    borderColor: '#ef4444',
-                    borderDash: [6, 6],
-                    pointRadius: 0,
-                    borderWidth: 1,
-                    fill: false
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: '#1f2937',
-                    titleColor: '#f59e0b',
-                    bodyColor: '#e5e7eb',
-                    borderColor: '#374151',
-                    borderWidth: 1
-                }
-            },
-            scales: {
-                x: { ticks: { color: '#6b7280', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: '#1f2937' } },
-                y: { ticks: { color: '#6b7280', font: { size: 10 } }, grid: { color: '#1f2937' } }
-            }
-        }
+        data: { labels, datasets: [
+            { label:'Weight', data, borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,0.08)', fill:true, tension:0.3, pointRadius:data.length>30?0:4, pointBackgroundColor:'#f59e0b', borderWidth:2 },
+            { label:'Goal', data:goal, borderColor:'#ef4444', borderDash:[6,6], pointRadius:0, borderWidth:1, fill:false }
+        ]},
+        options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:{backgroundColor:'#1f2937',titleColor:'#f59e0b',bodyColor:'#e5e7eb',borderColor:'#374151',borderWidth:1} },
+            scales:{ x:{ticks:{color:'#6b7280',maxTicksLimit:8,font:{size:10}},grid:{color:'#1f2937'}}, y:{ticks:{color:'#6b7280',font:{size:10}},grid:{color:'#1f2937'}} } }
     });
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    9. ADMIN LAB                             ║
+// ║                 12. ADMIN LAB                               ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function renderLab() {
+async function loadLab() {
+    showLoading('lab-content');
+    try {
+        const [vials, types, inv, profiles] = await Promise.all([
+            fetchActiveVials(), fetchPeptideTypes(), fetchInventory(), fetchAllProfiles()
+        ]);
+        renderLab(vials, types, inv, profiles);
+    } catch (e) { document.getElementById('lab-content').innerHTML = `<div class="text-red-400 text-center py-12">${e.message}</div>`; }
+}
+
+function renderLab(vials, types, inv, profiles) {
     let html = '';
 
     // === MIXING CALCULATOR ===
-    html += `<div class="card">
-        <div class="section-title">Mixing Calculator</div>
+    html += `<div class="card"><div class="section-title">Mixing Calculator</div>
         <div class="grid grid-cols-2 gap-3 mb-3">
-            <div>
-                <label class="label">Vial (mg)</label>
-                <input type="number" inputmode="decimal" class="input-field" id="mix-mg" placeholder="e.g. 20" oninput="updateMixCalc()">
-            </div>
-            <div>
-                <label class="label">BAC Water (mL)</label>
-                <input type="number" inputmode="decimal" step="0.1" class="input-field" id="mix-water" placeholder="e.g. 2" oninput="updateMixCalc()">
-            </div>
+            <div><label class="label">Vial (mg)</label><input type="number" inputmode="decimal" class="input-field" id="mix-mg" placeholder="e.g. 20" oninput="updateMixCalc()"></div>
+            <div><label class="label">BAC Water (mL)</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="mix-water" placeholder="e.g. 2" oninput="updateMixCalc()"></div>
         </div>
         <div id="mix-result" class="bg-gray-800 rounded-lg p-3 text-center text-gray-500 text-sm">Enter values above</div>
-        <div class="mt-3 border-t border-gray-800 pt-3">
-            <div class="section-title">Quick Dose Lookup</div>
+        <div class="mt-3 border-t border-gray-800 pt-3"><div class="section-title">Quick Dose Lookup</div>
             <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="label">Desired Dose (mg)</label>
-                    <input type="number" inputmode="decimal" step="0.1" class="input-field" id="mix-dose" placeholder="e.g. 2.5" oninput="updateMixCalc()">
-                </div>
-                <div>
-                    <label class="label">Units to Pull</label>
-                    <div id="mix-units" class="input-field bg-gray-950 text-amber-400 font-bold text-center">&mdash;</div>
-                </div>
-            </div>
-        </div>
-    </div>`;
+                <div><label class="label">Desired Dose (mg)</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="mix-dose" placeholder="e.g. 2.5" oninput="updateMixCalc()"></div>
+                <div><label class="label">Units to Pull</label><div id="mix-units" class="input-field bg-gray-950 text-amber-400 font-bold text-center">&mdash;</div></div>
+            </div></div></div>`;
 
     // === MIX NEW VIAL ===
-    html += `<div class="card">
-        <div class="section-title">Mix a New Vial</div>
-        <p class="text-xs text-gray-500 mb-3">Reconstitute a vial from inventory. It enters the shared mixed pool.</p>
+    html += `<div class="card"><div class="section-title">Mix a New Vial</div>
+        <p class="text-xs text-gray-500 mb-3">Reconstitute a vial from inventory. Enters the shared pool.</p>
         <div class="space-y-3">
-            <div>
-                <label class="label">Peptide</label>
-                <select class="input-field" id="vial-peptide">
-                    <option value="">Select...</option>
-                    ${state.lab.peptides.map(p => `<option>${p.name}</option>`).join('')}
-                </select>
-            </div>
+            <div><label class="label">Peptide</label><select class="input-field" id="vial-peptide"><option value="">Select...</option>
+                ${types.map(t=>`<option>${t.name}</option>`).join('')}</select></div>
             <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="label">Vial MG</label>
-                    <input type="number" inputmode="decimal" class="input-field" id="vial-mg" placeholder="e.g. 20">
-                </div>
-                <div>
-                    <label class="label">BAC Water (mL)</label>
-                    <input type="number" inputmode="decimal" step="0.1" class="input-field" id="vial-water" placeholder="e.g. 2">
-                </div>
+                <div><label class="label">Vial MG</label><input type="number" inputmode="decimal" class="input-field" id="vial-mg" placeholder="e.g. 20"></div>
+                <div><label class="label">BAC Water (mL)</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="vial-water" placeholder="e.g. 2"></div>
             </div>
-            <div>
-                <label class="label">Date Mixed</label>
-                <input type="date" class="input-field" id="vial-date" value="${todayStr()}">
-            </div>
+            <div><label class="label">Date Mixed</label><input type="date" class="input-field" id="vial-date" value="${todayStr()}"></div>
             <button onclick="mixVial()" class="btn-primary">&#x1F9EA; Mix &amp; Register Vial</button>
-        </div>
-    </div>`;
+        </div></div>`;
 
     // === ACTIVE MIXED VIALS ===
-    html += `<div class="card">
-        <div class="section-title">Active Mixed Vials</div>`;
-    const active = state.lab.mixedVials.filter(v => !v.depleted);
-    if (active.length === 0) {
-        html += `<div class="text-gray-600 text-sm text-center py-4">No mixed vials yet</div>`;
-    } else {
-        active.forEach(v => {
-            const age = daysSince(v.mixedDate);
-            const isExpired = age > 28;
-            const isExpiring = age >= 25;
-            const concentration = (v.vialMg / (v.waterMl * 100)).toFixed(4);
-            const totalUnits = v.waterMl * 100;
-
-            html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${isExpired ? 'border-2 border-red-600 expiry-pulse' : isExpiring ? 'border border-yellow-600' : 'border border-gray-700'}">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <div class="font-bold text-white">${v.peptide}</div>
-                        <div class="text-xs text-gray-400">${v.vialMg}mg reconstituted in ${v.waterMl}mL (${totalUnits} units)</div>
-                        <div class="text-xs text-gray-400">${concentration} mg/unit</div>
-                        <div class="text-xs ${isExpired ? 'text-red-400 font-bold' : isExpiring ? 'text-yellow-400' : 'text-gray-500'}">
-                            Mixed: ${formatDate(v.mixedDate)} (${age}d ago) ${isExpired ? '&mdash; EXPIRED' : isExpiring ? '&mdash; EXPIRING SOON' : ''}
-                        </div>
-                    </div>
-                    <button onclick="depleteVial('${v.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1" title="Mark depleted">&#x1F5D1;</button>
-                </div>
-            </div>`;
-        });
-    }
+    html += `<div class="card"><div class="section-title">Active Mixed Vials</div>`;
+    if (vials.length === 0) { html += '<div class="text-gray-600 text-sm text-center py-4">No mixed vials yet</div>'; }
+    else { vials.forEach(v => {
+        const age = daysSince(v.mixed_date), expired = age > 28, expiring = age >= 25;
+        const conc = (v.vial_mg / (v.water_ml * 100)).toFixed(4);
+        html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
+            <div class="flex justify-between items-start"><div>
+                <div class="font-bold text-white">${v.peptide}</div>
+                <div class="text-xs text-gray-400">${v.vial_mg}mg in ${v.water_ml}mL (${v.water_ml*100} units) &bull; ${conc} mg/unit</div>
+                <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'}">
+                    Mixed: ${formatDate(v.mixed_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
+            </div>
+            <button onclick="depleteVial('${v.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div></div>`; }); }
     html += '</div>';
 
     // === USER DOSE MANAGEMENT ===
-    html += `<div class="card">
-        <div class="section-title">User Dose Management</div>
-        <p class="text-xs text-gray-500 mb-3">Set each user's current dose per peptide. Adjust as you titrate (3-Week Rule: only increase if loss stalls 3 weeks).</p>`;
-    Object.values(state.users).forEach(u => {
-        const doses = u.currentDoses || {};
-        const peptideList = u.peptideType ? u.peptideType.split(' + ').map(s => s.trim()) : [];
-        // Peptides not yet on this user's regimen
-        const available = state.lab.peptides.filter(p => !peptideList.includes(p.name));
-        html += `<div class="bg-gray-800 rounded-lg p-3 mb-3">
-            <div class="font-bold text-amber-400 text-sm mb-2">${u.name}</div>
-            <div class="space-y-2">`;
-        peptideList.forEach(pep => {
-            const currentMg = doses[pep] || '';
-            const vial = state.lab.mixedVials.find(v => v.peptide === pep && !v.depleted);
-            const unitsPreview = (vial && currentMg) ? calcUnits(currentMg, vial.vialMg, vial.waterMl) + ' units' : '';
+    html += `<div class="card"><div class="section-title">User Dose Management</div>
+        <p class="text-xs text-gray-500 mb-3">Set each user's current dose per peptide. Adjust as you titrate (3-Week Rule).</p>`;
+    profiles.forEach(u => {
+        const doses = u.current_doses || {};
+        const pepList = u.peptide_type ? u.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
+        const available = types.filter(t => !pepList.includes(t.name));
+        html += `<div class="bg-gray-800 rounded-lg p-3 mb-3"><div class="font-bold text-amber-400 text-sm mb-2">${u.display_name}</div><div class="space-y-2">`;
+        pepList.forEach(pep => {
+            const mg = doses[pep] || '';
+            const vial = vials.find(v => v.peptide === pep);
+            const preview = (vial && mg) ? calcUnits(mg, vial.vial_mg, vial.water_ml)+' units' : '';
             html += `<div class="flex items-center gap-2">
-                    <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0" title="Remove">&times;</button>
-                    <span class="text-xs text-gray-400 w-24 shrink-0">${pep}</span>
-                    <input type="number" inputmode="decimal" step="0.25" class="input-field text-sm py-2" style="max-width:90px"
-                        value="${currentMg}" placeholder="mg"
-                        onchange="updateUserDose('${u.id}','${pep}',this.value)">
-                    <span class="text-xs text-gray-500">mg</span>
-                    ${unitsPreview ? `<span class="text-xs text-amber-400 font-bold ml-auto">${unitsPreview}</span>` : '<span class="text-xs text-gray-600 ml-auto">no vial</span>'}
-                </div>`;
+                <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
+                <span class="text-xs text-gray-400 w-24 shrink-0">${pep}</span>
+                <input type="number" inputmode="decimal" step="0.25" class="input-field text-sm py-2" style="max-width:90px" value="${mg}" placeholder="mg" onchange="updateUserDose('${u.id}','${pep}',this.value)">
+                <span class="text-xs text-gray-500">mg</span>
+                ${preview?`<span class="text-xs text-amber-400 font-bold ml-auto">${preview}</span>`:'<span class="text-xs text-gray-600 ml-auto">no vial</span>'}
+            </div>`;
         });
         html += '</div>';
         if (available.length > 0) {
             html += `<div class="flex items-center gap-2 mt-3 pt-2 border-t border-gray-700">
-                <select class="input-field text-sm py-2 flex-1" id="add-pep-${u.id}">
-                    <option value="">Add peptide...</option>
-                    ${available.map(p => `<option value="${p.name}">${p.name}</option>`).join('')}
-                </select>
-                <button onclick="addUserPeptide('${u.id}')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95">+</button>
-            </div>`;
+                <select class="input-field text-sm py-2 flex-1" id="add-pep-${u.id}"><option value="">Add peptide...</option>
+                    ${available.map(t=>`<option value="${t.name}">${t.name}</option>`).join('')}</select>
+                <button onclick="addUserPeptide('${u.id}')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95">+</button></div>`;
         }
         html += '</div>';
     });
     html += '</div>';
 
-    // === UNMIXED INVENTORY ===
-    html += `<div class="card">
-        <div class="section-title">Unmixed Vial Inventory</div>
-        <div class="space-y-3">`;
-    Object.entries(state.lab.inventory).forEach(([item, count]) => {
+    // === INVENTORY ===
+    html += `<div class="card"><div class="section-title">Unmixed Vial Inventory</div><div class="space-y-3">`;
+    inv.forEach(item => {
         html += `<div class="flex items-center justify-between bg-gray-800 rounded-lg p-3">
-            <span class="text-sm text-gray-300 flex-1">${item}</span>
+            <span class="text-sm text-gray-300 flex-1">${item.item_name}</span>
             <div class="flex items-center gap-3">
-                <button onclick="updateInventory('${item}', -1)" class="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-lg text-xl font-bold text-white transition active:scale-95">&minus;</button>
-                <span class="text-xl font-bold text-white w-8 text-center">${count}</span>
-                <button onclick="updateInventory('${item}', 1)" class="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-lg text-xl font-bold text-white transition active:scale-95">+</button>
-            </div>
-        </div>`;
+                <button onclick="changeInventory('${item.id}',${item.count - 1})" class="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-lg text-xl font-bold text-white transition active:scale-95">&minus;</button>
+                <span class="text-xl font-bold text-white w-8 text-center">${item.count}</span>
+                <button onclick="changeInventory('${item.id}',${item.count + 1})" class="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-lg text-xl font-bold text-white transition active:scale-95">+</button>
+            </div></div>`;
     });
     html += '</div></div>';
 
     // === MANAGE PEPTIDES ===
-    html += `<div class="card">
-        <div class="section-title">Manage Peptide Types</div>
-        <p class="text-xs text-gray-500 mb-3">Add or remove peptide types available across the app.</p>
-        <div class="space-y-2 mb-3">`;
-    state.lab.peptides.forEach(p => {
-        html += `<div class="flex items-center justify-between bg-gray-800 rounded-lg p-3">
-            <div>
-                <span class="text-sm text-gray-200 font-medium">${p.name}</span>
-                <span class="text-xs text-gray-500 ml-2">Vial: ${p.vialSize}</span>
-            </div>
-            <button onclick="removePeptideType('${p.name}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1 transition" title="Remove">&times;</button>
-        </div>`;
+    html += `<div class="card"><div class="section-title">Manage Peptide Types</div>
+        <p class="text-xs text-gray-500 mb-3">Add or remove peptide types available across the app.</p><div class="space-y-2 mb-3">`;
+    types.forEach(t => {
+        html += `<div class="flex items-center justify-between bg-gray-800 rounded-lg p-3"><div>
+            <span class="text-sm text-gray-200 font-medium">${t.name}</span>
+            <span class="text-xs text-gray-500 ml-2">Vial: ${t.vial_size}</span></div>
+            <button onclick="removePeptideType('${t.id}','${t.name}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&times;</button></div>`;
     });
-    html += `</div>
-        <div class="flex gap-2">
-            <input type="text" class="input-field text-sm py-2 flex-1" id="new-pep-name" placeholder="Peptide name">
-            <input type="text" class="input-field text-sm py-2" style="max-width:80px" id="new-pep-size" placeholder="e.g. 10mg">
-            <button onclick="addPeptideType()" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition active:scale-95 shrink-0">Add</button>
-        </div>
-    </div>`;
+    html += `</div><div class="flex gap-2">
+        <input type="text" class="input-field text-sm py-2 flex-1" id="new-pep-name" placeholder="Peptide name">
+        <input type="text" class="input-field text-sm py-2" style="max-width:80px" id="new-pep-size" placeholder="e.g. 10mg">
+        <button onclick="addPeptideType()" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition active:scale-95 shrink-0">Add</button>
+    </div></div>`;
 
     document.getElementById('lab-content').innerHTML = html;
 }
 
+// Lab actions
 function updateMixCalc() {
-    const mg = parseFloat(document.getElementById('mix-mg')?.value);
-    const water = parseFloat(document.getElementById('mix-water')?.value);
-    const dose = parseFloat(document.getElementById('mix-dose')?.value);
-    const resultEl = document.getElementById('mix-result');
-    const unitsEl = document.getElementById('mix-units');
-
-    if (mg && water) {
-        const concentration = mg / (water * 100);
-        resultEl.innerHTML = `<div class="text-amber-400 font-bold">${concentration.toFixed(4)} mg per unit</div>
-            <div class="text-gray-400 text-xs">${(water * 100).toFixed(0)} total units in syringe</div>`;
-    } else {
-        resultEl.innerHTML = 'Enter values above';
-    }
-
-    if (mg && water && dose) {
-        const units = calcUnits(dose, mg, water);
-        unitsEl.textContent = units + ' units';
-    } else {
-        unitsEl.innerHTML = '&mdash;';
-    }
+    const mg=parseFloat(document.getElementById('mix-mg')?.value), water=parseFloat(document.getElementById('mix-water')?.value), dose=parseFloat(document.getElementById('mix-dose')?.value);
+    const r=document.getElementById('mix-result'), u=document.getElementById('mix-units');
+    if(mg&&water){ r.innerHTML=`<div class="text-amber-400 font-bold">${(mg/(water*100)).toFixed(4)} mg/unit</div><div class="text-gray-400 text-xs">${(water*100).toFixed(0)} total units</div>`; } else { r.innerHTML='Enter values above'; }
+    if(mg&&water&&dose){ u.textContent=calcUnits(dose,mg,water)+' units'; } else { u.innerHTML='&mdash;'; }
 }
 
-function mixVial() {
-    const peptide = document.getElementById('vial-peptide').value;
-    const mg = parseFloat(document.getElementById('vial-mg').value);
-    const water = parseFloat(document.getElementById('vial-water').value);
-    const date = document.getElementById('vial-date').value;
-
-    if (!peptide || !mg || !water || !date) {
-        alert('Please fill in all fields.');
-        return;
-    }
-
-    state.lab.mixedVials.push({
-        id: generateId(),
-        peptide, vialMg: mg, waterMl: water,
-        mixedDate: date, depleted: false
-    });
-
-    // Decrement inventory if there's a matching item
-    const invKey = Object.keys(state.lab.inventory).find(k => k.toLowerCase().includes(peptide.toLowerCase()));
-    if (invKey && state.lab.inventory[invKey] > 0) {
-        state.lab.inventory[invKey]--;
-    }
-
-    saveState();
-    renderLab();
+async function mixVial() {
+    const peptide=document.getElementById('vial-peptide').value, mg=parseFloat(document.getElementById('vial-mg').value),
+        water=parseFloat(document.getElementById('vial-water').value), date=document.getElementById('vial-date').value;
+    if(!peptide||!mg||!water||!date){ alert('Fill all fields.'); return; }
+    try {
+        await insertVial(peptide, mg, water, date);
+        // Auto-decrement inventory
+        const match = cachedInventory.find(i => i.item_name.toLowerCase().includes(peptide.toLowerCase()));
+        if (match && match.count > 0) await setInventoryCount(match.id, match.count - 1);
+        await loadLab();
+    } catch(e){ alert('Error: '+e.message); }
 }
 
-function depleteVial(id) {
-    if (!confirm('Mark this vial as depleted/empty?')) return;
-    const vial = state.lab.mixedVials.find(v => v.id === id);
-    if (vial) vial.depleted = true;
-    saveState();
-    renderLab();
+async function depleteVial(id) {
+    if(!confirm('Mark this vial as depleted?')) return;
+    try { await markVialDepleted(id); await loadLab(); } catch(e){ alert(e.message); }
 }
 
-function addPeptideType() {
-    const name = document.getElementById('new-pep-name').value.trim();
-    const size = document.getElementById('new-pep-size').value.trim();
-    if (!name || !size) { alert('Enter both a name and vial size.'); return; }
-    if (state.lab.peptides.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-        alert('That peptide already exists.');
-        return;
-    }
-    state.lab.peptides.push({ name, vialSize: size });
-    const invKey = name + ' ' + size;
-    if (state.lab.inventory[invKey] === undefined) state.lab.inventory[invKey] = 0;
-    saveState();
-    renderLab();
+async function changeInventory(id, newCount) {
+    try { await setInventoryCount(id, newCount); await loadLab(); } catch(e){ alert(e.message); }
 }
 
-function removePeptideType(name) {
-    if (!confirm(`Remove "${name}" from the peptide list? This won't delete mixed vials or user doses already set.`)) return;
-    state.lab.peptides = state.lab.peptides.filter(p => p.name !== name);
-    saveState();
-    renderLab();
+async function addPeptideType() {
+    const name=document.getElementById('new-pep-name').value.trim(), size=document.getElementById('new-pep-size').value.trim();
+    if(!name||!size){ alert('Enter name and vial size.'); return; }
+    try {
+        await insertPeptideType(name, size);
+        await upsertInventoryItem(name+' '+size, 0);
+        await loadLab();
+    } catch(e){ alert(e.message); }
 }
 
-function addUserPeptide(userId) {
-    const sel = document.getElementById('add-pep-' + userId);
-    if (!sel || !sel.value) return;
-    const user = state.users[userId];
-    if (!user) return;
-    const current = user.peptideType ? user.peptideType.split(' + ').map(s => s.trim()) : [];
-    current.push(sel.value);
-    user.peptideType = current.join(' + ');
-    if (!user.currentDoses) user.currentDoses = {};
-    saveState();
-    renderLab();
+async function removePeptideType(id, name) {
+    if(!confirm(`Remove "${name}"?`)) return;
+    try { await deletePeptideType(id); await loadLab(); } catch(e){ alert(e.message); }
 }
 
-function removeUserPeptide(userId, peptide) {
-    const user = state.users[userId];
-    if (!user) return;
-    const current = user.peptideType ? user.peptideType.split(' + ').map(s => s.trim()) : [];
-    user.peptideType = current.filter(p => p !== peptide).join(' + ');
-    if (user.currentDoses) delete user.currentDoses[peptide];
-    saveState();
-    renderLab();
+async function updateUserDose(userId, peptide, value) {
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if(!user) return;
+        const doses = { ...(user.current_doses || {}) };
+        const mg = parseFloat(value);
+        if(mg > 0) doses[peptide] = mg; else delete doses[peptide];
+        await updateProfileField(userId, { current_doses: doses });
+        await loadLab();
+    } catch(e){ alert(e.message); }
 }
 
-function updateUserDose(userId, peptide, value) {
-    const user = state.users[userId];
-    if (!user) return;
-    if (!user.currentDoses) user.currentDoses = {};
-    const mg = parseFloat(value);
-    if (mg > 0) {
-        user.currentDoses[peptide] = mg;
-    } else {
-        delete user.currentDoses[peptide];
-    }
-    saveState();
-    renderLab();
+async function addUserPeptide(userId) {
+    const sel = document.getElementById('add-pep-'+userId);
+    if(!sel||!sel.value) return;
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if(!user) return;
+        const current = user.peptide_type ? user.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
+        current.push(sel.value);
+        await updateProfileField(userId, { peptide_type: current.join(' + ') });
+        await loadLab();
+    } catch(e){ alert(e.message); }
 }
 
-function updateInventory(item, delta) {
-    if (!state.lab.inventory[item] && state.lab.inventory[item] !== 0) state.lab.inventory[item] = 0;
-    state.lab.inventory[item] = Math.max(0, state.lab.inventory[item] + delta);
-    saveState();
-    renderLab();
+async function removeUserPeptide(userId, peptide) {
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if(!user) return;
+        const current = user.peptide_type ? user.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
+        const updated = current.filter(p => p !== peptide);
+        const doses = { ...(user.current_doses || {}) };
+        delete doses[peptide];
+        await updateProfileField(userId, { peptide_type: updated.join(' + '), current_doses: doses });
+        await loadLab();
+    } catch(e){ alert(e.message); }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    10. WORKOUT PLAN                         ║
+// ║                 13. WORKOUT PLAN                            ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 function renderWorkoutPlan() {
+    const p = currentProfile;
+    if(!p) return;
+    const wk = weekNum(p);
     let html = '';
-    const wk = weekNumber(currentUser);
 
-    if (currentUser === 'grumpy') {
-        html += `<div class="card">
-            <div class="section-title">Weekly Metabolic Calendar</div>
-            <div class="space-y-2 text-sm">
-                ${Object.entries(GRUMPY_SCHEDULE).map(([d, s]) => {
-                    const isToday = parseInt(d) === dayOfWeek();
-                    return `<div class="flex items-center gap-3 p-2 rounded-lg ${isToday ? 'bg-amber-900/30 border border-amber-700' : ''}">
-                        <span class="w-10 font-bold ${isToday ? 'text-amber-400' : 'text-gray-500'}">${DAYS_SHORT[d]}</span>
-                        <span class="text-gray-300 flex-1">${s.peptide}</span>
-                        <span class="text-gray-500 text-xs">${s.workout}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>`;
-
-        html += `<div class="card">
-            <div class="section-title">4-Week Calisthenics Progression</div>
-            <div class="text-sm text-gray-400 mb-3">Current: Week ${Math.min(wk, 4)}</div>`;
-
-        GRUMPY_CALISTHENICS.forEach(week => {
-            const isCurrent = Math.min(wk, 4) === week.week;
-            html += `<div class="mb-4 ${isCurrent ? 'bg-amber-900/20 border border-amber-800 rounded-lg p-3' : ''}">
-                <div class="font-bold ${isCurrent ? 'text-amber-400' : 'text-gray-400'} mb-2">Week ${week.week}: ${week.name} ${isCurrent ? '(Current)' : ''}</div>
-                <div class="space-y-1">
-                    ${week.exercises.map(e => `<div class="flex justify-between"><span class="text-gray-300">${e.name}</span><span class="text-gray-500">${e.detail}</span></div>`).join('')}
-                </div>
-            </div>`;
+    if (profileIs(p,'grumpy')) {
+        html += `<div class="card"><div class="section-title">Weekly Metabolic Calendar</div><div class="space-y-2 text-sm">
+            ${Object.entries(GRUMPY_SCHEDULE).map(([d,s])=>{
+                const today=parseInt(d)===dayOfWeek();
+                return `<div class="flex items-center gap-3 p-2 rounded-lg ${today?'bg-amber-900/30 border border-amber-700':''}">
+                    <span class="w-10 font-bold ${today?'text-amber-400':'text-gray-500'}">${DAYS_SHORT[d]}</span>
+                    <span class="text-gray-300 flex-1">${s.peptide}</span>
+                    <span class="text-gray-500 text-xs">${s.workout}</span></div>`;
+            }).join('')}</div></div>`;
+        html += `<div class="card"><div class="section-title">4-Week Calisthenics Progression</div><div class="text-sm text-gray-400 mb-3">Current: Week ${Math.min(wk,4)}</div>`;
+        GRUMPY_CALISTHENICS.forEach(week=>{
+            const cur=Math.min(wk,4)===week.week;
+            html += `<div class="mb-4 ${cur?'bg-amber-900/20 border border-amber-800 rounded-lg p-3':''}">
+                <div class="font-bold ${cur?'text-amber-400':'text-gray-400'} mb-2">Week ${week.week}: ${week.name} ${cur?'(Current)':''}</div>
+                <div class="space-y-1">${week.exercises.map(e=>`<div class="flex justify-between"><span class="text-gray-300">${e.name}</span><span class="text-gray-500">${e.detail}</span></div>`).join('')}</div></div>`;
         });
         html += '</div>';
-
-    } else if (currentUser === 'karen') {
-        html += `<div class="card">
-            <div class="section-title">Treadmill Incline Progression</div>
-            <div class="text-sm text-gray-400 mb-1">Week ${Math.min(wk, 12)} &bull; 8 lb weighted vest &bull; No handrails</div>
+    } else if (profileIs(p,'karen')) {
+        html += `<div class="card"><div class="section-title">Treadmill Incline Progression</div>
+            <div class="text-sm text-gray-400 mb-1">Week ${Math.min(wk,12)} &bull; 8 lb vest &bull; No handrails</div>
             <div class="text-xs text-gray-600 mb-4">&#x26A0; STRICTLY treadmill walking only. No calisthenics.</div>`;
-
-        KAREN_TREADMILL.forEach(tier => {
-            const isCurrent = tier.weeks.includes(Math.min(wk, 12));
-            html += `<div class="mb-3 p-3 rounded-lg ${isCurrent ? 'bg-amber-900/20 border border-amber-800' : 'bg-gray-800'}">
-                <div class="font-bold ${isCurrent ? 'text-amber-400' : 'text-gray-400'} mb-2">${tier.tier} ${isCurrent ? '(Current)' : ''}</div>
+        KAREN_TREADMILL.forEach(tier=>{
+            const cur=tier.weeks.includes(Math.min(wk,12));
+            html += `<div class="mb-3 p-3 rounded-lg ${cur?'bg-amber-900/20 border border-amber-800':'bg-gray-800'}">
+                <div class="font-bold ${cur?'text-amber-400':'text-gray-400'} mb-2">${tier.tier} ${cur?'(Current)':''}</div>
                 <div class="text-xs text-gray-500 mb-2">Weeks ${tier.weeks[0]}-${tier.weeks[tier.weeks.length-1]}</div>
                 <div class="grid grid-cols-2 gap-2 text-sm">
                     <div><span class="text-gray-500">Duration:</span> <span class="text-white">${tier.duration}</span></div>
                     <div><span class="text-gray-500">Incline:</span> <span class="text-white">${tier.incline}</span></div>
                     <div><span class="text-gray-500">Speed:</span> <span class="text-white">${tier.speed}</span></div>
                     <div><span class="text-gray-500">Sessions:</span> <span class="text-white">${tier.sessions}x/week</span></div>
-                </div>
-            </div>`;
+                </div></div>`;
         });
         html += '</div>';
-
-        html += `<div class="card">
-            <div class="section-title">Weekly Schedule</div>
-            <div class="space-y-2 text-sm">
-                ${Object.entries(KAREN_SCHEDULE).map(([d, s]) => {
-                    const isToday = parseInt(d) === dayOfWeek();
-                    return `<div class="flex items-center gap-3 p-2 rounded-lg ${isToday ? 'bg-amber-900/30 border border-amber-700' : ''}">
-                        <span class="w-10 font-bold ${isToday ? 'text-amber-400' : 'text-gray-500'}">${DAYS_SHORT[d]}</span>
-                        <span class="text-gray-300 flex-1">${s.peptide}</span>
-                        <span class="text-gray-500 text-xs">${s.workout}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>`;
-
+        html += `<div class="card"><div class="section-title">Weekly Schedule</div><div class="space-y-2 text-sm">
+            ${Object.entries(KAREN_SCHEDULE).map(([d,s])=>{
+                const today=parseInt(d)===dayOfWeek();
+                return `<div class="flex items-center gap-3 p-2 rounded-lg ${today?'bg-amber-900/30 border border-amber-700':''}">
+                    <span class="w-10 font-bold ${today?'text-amber-400':'text-gray-500'}">${DAYS_SHORT[d]}</span>
+                    <span class="text-gray-300 flex-1">${s.peptide}</span>
+                    <span class="text-gray-500 text-xs">${s.workout}</span></div>`;
+            }).join('')}</div></div>`;
     } else {
-        html += `<div class="card"><div class="text-gray-500 text-center py-8">Custom workout plan not configured for this user.</div></div>`;
+        html += '<div class="card"><div class="text-gray-500 text-center py-8">Custom workout plan not configured.</div></div>';
     }
-
     document.getElementById('workout-content').innerHTML = html;
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    11. NO-GO MODAL                          ║
+// ║                 14. NO-GO MODAL                             ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 function showNoGoModal() {
-    const user = state.users[currentUser];
-    if (!user) return;
-
-    const foods = currentUser === 'grumpy' ? NOGO_GRUMPY : currentUser === 'karen' ? NOGO_KAREN : (user.noGoFoods || []);
-
-    let html = `<div class="text-center mb-4">
-        <div class="text-4xl mb-2">&#x1F6AB;</div>
+    if(!currentProfile) return;
+    const foods = currentProfile.no_go_foods || [];
+    let html = `<div class="text-center mb-4"><div class="text-4xl mb-2">&#x1F6AB;</div>
         <h3 class="text-xl font-bold text-red-500">NO-GO FOODS</h3>
-        <p class="text-gray-500 text-sm">Do not consume these items</p>
-    </div>
-    <div class="space-y-3">`;
-
+        <p class="text-gray-500 text-sm">Do not consume these items</p></div><div class="space-y-3">`;
     if (Array.isArray(foods) && foods.length > 0 && typeof foods[0] === 'object') {
         foods.forEach(f => {
-            html += `<div class="flex items-center gap-3 p-3 rounded-lg ${f.alert ? 'bg-red-900/60 border-2 border-red-500' : 'bg-gray-800 border border-gray-700'}">
-                <span class="text-2xl">${f.icon}</span>
-                <span class="${f.alert ? 'text-red-300 font-bold' : 'text-gray-200'}">${f.text}</span>
-            </div>`;
+            html += `<div class="flex items-center gap-3 p-3 rounded-lg ${f.alert?'bg-red-900/60 border-2 border-red-500':'bg-gray-800 border border-gray-700'}">
+                <span class="text-2xl">${f.icon||'&#x1F6AB;'}</span>
+                <span class="${f.alert?'text-red-300 font-bold':'text-gray-200'}">${f.text}</span></div>`;
         });
     } else if (Array.isArray(foods)) {
-        foods.forEach(f => {
-            html += `<div class="flex items-center gap-3 p-3 bg-gray-800 border border-gray-700 rounded-lg">
-                <span class="text-2xl">&#x1F6AB;</span>
-                <span class="text-gray-200">${f}</span>
-            </div>`;
-        });
+        foods.forEach(f => { html += `<div class="flex items-center gap-3 p-3 bg-gray-800 border border-gray-700 rounded-lg"><span class="text-2xl">&#x1F6AB;</span><span class="text-gray-200">${f}</span></div>`; });
     }
-
-    html += `</div>
-    <button onclick="closeModal()" class="btn-secondary mt-6">Got It</button>`;
-
+    html += '</div><button onclick="closeModal()" class="btn-secondary mt-6">Got It</button>';
     showModal(html);
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    12. ADD USER                             ║
+// ║                 15. SETTINGS                                ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function showAddUserForm() {
-    const html = `
-        <h3 class="text-xl font-bold text-white mb-4">Add New User</h3>
-        <div class="space-y-3">
-            <div>
-                <label class="label">Name</label>
-                <input type="text" class="input-field" id="new-name" placeholder="Display name">
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="label">Start Weight (lbs)</label>
-                    <input type="number" inputmode="decimal" class="input-field" id="new-start" placeholder="e.g. 180">
-                </div>
-                <div>
-                    <label class="label">Goal Weight (lbs)</label>
-                    <input type="number" inputmode="decimal" class="input-field" id="new-goal" placeholder="e.g. 155">
-                </div>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="label">Calorie Floor</label>
-                    <input type="number" inputmode="numeric" class="input-field" id="new-cal" placeholder="e.g. 1800">
-                </div>
-                <div>
-                    <label class="label">Protein Floor (g)</label>
-                    <input type="number" inputmode="numeric" class="input-field" id="new-protein" placeholder="e.g. 140">
-                </div>
-            </div>
-            <div>
-                <label class="label">Primary Peptide</label>
-                <select class="input-field" id="new-peptide">
-                    ${state.lab.peptides.map(p => `<option>${p.name}</option>`).join('')}
-                </select>
-                <p class="text-xs text-gray-500 mt-1">More peptides can be added to their regimen later in the Lab.</p>
-            </div>
-            <button onclick="addNewUser()" class="btn-primary mt-2">Add User</button>
-            <button onclick="closeModal()" class="btn-secondary">Cancel</button>
-        </div>`;
-    showModal(html);
+async function loadSettings() {
+    showLoading('settings-content');
+    try {
+        const [recentLogs, allProfiles] = await Promise.all([
+            fetchRecentLogs(14),
+            isAdmin(currentProfile) ? fetchAllProfiles() : Promise.resolve([])
+        ]);
+        let todayLogs = [];
+        if (isAdmin(currentProfile)) {
+            const { data } = await sb.from('daily_logs').select('*').eq('log_date', todayStr());
+            todayLogs = data || [];
+        }
+        renderSettings(recentLogs, allProfiles, todayLogs);
+    } catch(e) { document.getElementById('settings-content').innerHTML = `<div class="text-red-400 text-center py-12">${e.message}</div>`; }
 }
 
-function addNewUser() {
-    const name = document.getElementById('new-name').value.trim();
-    const start = parseFloat(document.getElementById('new-start').value);
-    const goal = parseFloat(document.getElementById('new-goal').value);
-    const cal = parseInt(document.getElementById('new-cal').value);
-    const protein = parseInt(document.getElementById('new-protein').value);
-    const peptide = document.getElementById('new-peptide').value;
-
-    if (!name || !start || !goal || !cal || !protein) {
-        alert('Please fill in all fields.');
-        return;
-    }
-
-    const id = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (state.users[id]) {
-        alert('A user with a similar name already exists.');
-        return;
-    }
-
-    state.users[id] = {
-        id, name, isAdmin: false,
-        startWeight: start, goalWeight: goal,
-        calorieTarget: cal, proteinMin: protein, proteinMax: Math.round(protein * 1.1),
-        fiberTarget: 0, waterTarget: 80,
-        peptideType: peptide,
-        noGoFoods: ['Fried foods', 'Carbonated drinks', 'Liquid sugar'],
-        warningThreshold: 2,
-        programStart: todayStr(),
-        created: Date.now()
-    };
-
-    saveState();
-    closeModal();
-    renderUserSelect();
-}
-
-// ╔══════════════════════════════════════════════════════════════╗
-// ║                    13. SETTINGS / BACKUP                    ║
-// ╚══════════════════════════════════════════════════════════════╝
-
-function renderSettings() {
-    const user = state.users[currentUser];
+function renderSettings(recentLogs, allProfiles, todayLogs) {
+    const p = currentProfile;
     let html = '';
 
-    // User profile summary
-    html += `<div class="card">
-        <div class="section-title">Profile</div>
-        <div class="space-y-2 text-sm">
-            <div class="flex justify-between"><span class="text-gray-400">Name</span><span class="text-white">${user.name}</span></div>
-            <div class="flex justify-between"><span class="text-gray-400">Start Weight</span><span class="text-white">${user.startWeight} lbs</span></div>
-            <div class="flex justify-between"><span class="text-gray-400">Goal Weight</span><span class="text-white">${user.goalWeight} lbs</span></div>
-            <div class="flex justify-between"><span class="text-gray-400">Calories</span><span class="text-white">${user.calorieTarget} kcal</span></div>
-            <div class="flex justify-between"><span class="text-gray-400">Protein</span><span class="text-white">${user.proteinMin}-${user.proteinMax}g</span></div>
-            <div class="flex justify-between"><span class="text-gray-400">Water</span><span class="text-white">${user.waterTarget} oz</span></div>
-            <div class="flex justify-between"><span class="text-gray-400">Peptides</span><span class="text-white text-right text-xs">${user.peptideType || 'N/A'}</span></div>
-            <div class="flex justify-between"><span class="text-gray-400">Program Start</span><span class="text-white">${user.programStart ? formatDate(user.programStart) : 'N/A'}</span></div>
-            <div class="flex justify-between"><span class="text-gray-400">Current Week</span><span class="text-amber-400 font-bold">${weekNumber(currentUser)}</span></div>
-        </div>
-    </div>`;
+    html += `<div class="card"><div class="section-title">Profile</div><div class="space-y-2 text-sm">
+        <div class="flex justify-between"><span class="text-gray-400">Name</span><span class="text-white">${p.display_name}</span></div>
+        <div class="flex justify-between"><span class="text-gray-400">Email</span><span class="text-white text-xs">${currentSession.user.email}</span></div>
+        <div class="flex justify-between"><span class="text-gray-400">Start Weight</span><span class="text-white">${p.start_weight||'?'} lbs</span></div>
+        <div class="flex justify-between"><span class="text-gray-400">Goal Weight</span><span class="text-white">${p.goal_weight||'?'} lbs</span></div>
+        <div class="flex justify-between"><span class="text-gray-400">Calories</span><span class="text-white">${p.calorie_target} kcal</span></div>
+        <div class="flex justify-between"><span class="text-gray-400">Protein</span><span class="text-white">${p.protein_min}-${p.protein_max}g</span></div>
+        <div class="flex justify-between"><span class="text-gray-400">Peptides</span><span class="text-white text-right text-xs">${p.peptide_type||'N/A'}</span></div>
+        <div class="flex justify-between"><span class="text-gray-400">Program Start</span><span class="text-white">${p.program_start?formatDate(p.program_start):'N/A'}</span></div>
+        <div class="flex justify-between"><span class="text-gray-400">Current Week</span><span class="text-amber-400 font-bold">${weekNum(p)}</span></div>
+    </div></div>`;
 
-    // Backup & Restore
-    html += `<div class="card">
-        <div class="section-title">Backup &amp; Restore</div>
-        <p class="text-xs text-gray-500 mb-3">Export your data as JSON to keep a backup. Essential for GitHub Pages since localStorage can be cleared.</p>
-        <button onclick="exportData()" class="btn-primary mb-3">&#x1F4BE; Export Backup (JSON)</button>
-        <button onclick="document.getElementById('import-input').click()" class="btn-secondary">&#x1F4C2; Import Backup</button>
-    </div>`;
-
-    // Admin: Change passcode
-    if (user.isAdmin) {
-        html += `<div class="card">
-            <div class="section-title">Admin Settings</div>
-            <button onclick="promptPasscode('changePasscode')" class="btn-secondary mb-3">&#x1F510; Change Passcode</button>
-            <button onclick="showDeleteUserPicker()" class="btn-danger">&#x1F5D1; Remove a User</button>
-        </div>`;
+    // Admin: all users summary
+    if (isAdmin(p) && allProfiles.length > 0) {
+        html += `<div class="card"><div class="section-title">All Users &mdash; Today's Summary</div>`;
+        allProfiles.forEach(u => {
+            const log = todayLogs.find(l => l.user_id === u.id);
+            html += `<div class="bg-gray-800 rounded-lg p-3 mb-2">
+                <div class="font-bold text-amber-400 text-sm">${u.display_name}</div>
+                <div class="text-xs text-gray-400 mt-1">
+                    ${log ? `${log.weight?log.weight+'lb ':''} ${log.calories?log.calories+'cal ':''} ${log.protein?log.protein+'g ':''} ${log.workout?.completed?'&#x2705; Workout':''}` : '<span class="text-gray-600">No log today</span>'}
+                </div></div>`;
+        });
+        html += '</div>';
     }
 
+    // Export
+    html += `<div class="card"><div class="section-title">Data Export</div>
+        <p class="text-xs text-gray-500 mb-3">Download your log history as JSON.</p>
+        <button onclick="exportMyData()" class="btn-secondary">&#x1F4BE; Export My Logs</button></div>`;
+
     // Log history
-    const logs = state.logs[currentUser] || {};
-    const dates = Object.keys(logs).sort((a, b) => b.localeCompare(a)).slice(0, 14);
-    if (dates.length > 0) {
-        html += `<div class="card">
-            <div class="section-title">Recent Log History</div>
-            <div class="space-y-1 text-sm">`;
-        dates.forEach(d => {
-            const l = logs[d];
+    if (recentLogs.length > 0) {
+        html += `<div class="card"><div class="section-title">Recent Log History</div><div class="space-y-1 text-sm">`;
+        recentLogs.forEach(l => {
             html += `<div class="flex justify-between items-center py-1 border-b border-gray-800">
-                <span class="text-gray-400">${formatDate(d)}</span>
-                <span class="text-gray-500 text-xs">
-                    ${l.weight ? l.weight + 'lb' : ''}
-                    ${l.calories ? l.calories + 'cal' : ''}
-                    ${l.protein ? l.protein + 'g' : ''}
-                    ${l.workout?.completed ? '&#x2705;' : ''}
-                </span>
+                <span class="text-gray-400">${formatDate(l.log_date)}</span>
+                <span class="text-gray-500 text-xs">${l.weight?l.weight+'lb ':''} ${l.calories?l.calories+'cal ':''} ${l.protein?l.protein+'g ':''} ${l.workout?.completed?'&#x2705;':''}</span>
             </div>`;
         });
         html += '</div></div>';
     }
 
+    // Logout
+    html += `<button onclick="handleLogout()" class="btn-danger mt-4">Sign Out</button>`;
+
     document.getElementById('settings-content').innerHTML = html;
 }
 
-function exportData() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `peptide-cc-backup-${todayStr()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-function handleImport(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const imported = JSON.parse(e.target.result);
-            if (!imported.users || !imported.logs) {
-                alert('Invalid backup file.');
-                return;
-            }
-            if (confirm('This will replace ALL current data. Continue?')) {
-                state = imported;
-                saveState();
-                currentUser = null;
-                showScreen('select');
-                alert('Backup restored successfully!');
-            }
-        } catch (err) {
-            alert('Failed to read backup file: ' + err.message);
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-}
-
-function showChangePasscodeForm() {
-    const html = `
-        <h3 class="text-xl font-bold text-white mb-4">Change Passcode</h3>
-        <div class="space-y-3">
-            <div>
-                <label class="label">New 4-Digit Passcode</label>
-                <input type="password" inputmode="numeric" maxlength="4" pattern="[0-9]*" class="input-field text-center text-2xl tracking-[0.5em]" id="new-passcode" placeholder="****">
-            </div>
-            <div>
-                <label class="label">Confirm Passcode</label>
-                <input type="password" inputmode="numeric" maxlength="4" pattern="[0-9]*" class="input-field text-center text-2xl tracking-[0.5em]" id="confirm-passcode" placeholder="****">
-            </div>
-            <button onclick="saveNewPasscode()" class="btn-primary">Save Passcode</button>
-            <button onclick="closeModal()" class="btn-secondary">Cancel</button>
-        </div>`;
-    showModal(html);
-}
-
-function saveNewPasscode() {
-    const newPin = document.getElementById('new-passcode').value;
-    const confirm = document.getElementById('confirm-passcode').value;
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-        alert('Passcode must be exactly 4 digits.');
-        return;
-    }
-    if (newPin !== confirm) {
-        alert('Passcodes do not match.');
-        return;
-    }
-    state.passcode = newPin;
-    saveState();
-    closeModal();
-    alert('Passcode updated!');
-}
-
-function showDeleteUserPicker() {
-    const nonAdmin = Object.values(state.users).filter(u => !u.isAdmin);
-    if (nonAdmin.length === 0) {
-        alert('No non-admin users to remove.');
-        return;
-    }
-    let html = `<h3 class="text-xl font-bold text-white mb-4">Remove a User</h3><div class="space-y-2">`;
-    nonAdmin.forEach(u => {
-        html += `<button onclick="deleteUser('${u.id}')" class="w-full bg-gray-800 hover:bg-red-900/50 border border-gray-700 hover:border-red-600 rounded-xl p-4 text-left transition">
-            <div class="font-bold text-white">${u.name}</div>
-            <div class="text-xs text-gray-500">This will delete all their logs</div>
-        </button>`;
-    });
-    html += `<button onclick="closeModal()" class="btn-secondary mt-2">Cancel</button></div>`;
-    showModal(html);
-}
-
-function deleteUser(id) {
-    if (!confirm(`Delete ${state.users[id]?.name || id} and all their data? This cannot be undone.`)) return;
-    delete state.users[id];
-    delete state.logs[id];
-    saveState();
-    closeModal();
-    renderUserSelect();
+async function exportMyData() {
+    try {
+        const { data } = await sb.from('daily_logs').select('*').eq('user_id', currentSession.user.id).order('log_date');
+        const blob = new Blob([JSON.stringify({ profile: currentProfile, logs: data }, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = `peptide-cc-${currentProfile.display_name}-${todayStr()}.json`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    } catch(e) { alert(e.message); }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                    14. INITIALIZATION                       ║
+// ║                 16. REAL-TIME SUBSCRIPTIONS                 ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function init() {
-    loadState();
-    renderUserSelect();
+function setupRealtime() {
+    sb.channel('lab-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'mixed_vials' }, () => {
+            fetchActiveVials().then(() => {
+                if (!document.getElementById('screen-dashboard').classList.contains('hidden')) loadDashboard();
+                if (!document.getElementById('screen-lab').classList.contains('hidden')) loadLab();
+            });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+            if (!document.getElementById('screen-lab').classList.contains('hidden')) loadLab();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'peptide_types' }, () => {
+            if (!document.getElementById('screen-lab').classList.contains('hidden')) loadLab();
+        })
+        .subscribe();
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║                 17. INIT                                    ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+async function init() {
+    // Check for existing session
+    const { data: { session } } = await sb.auth.getSession();
+
+    // Listen for auth changes
+    sb.auth.onAuthStateChange(async (event, session) => {
+        currentSession = session;
+        if (session) {
+            try {
+                currentProfile = await fetchProfile();
+                todayLog = null; // reset cache
+                setupRealtime();
+                showScreen('dashboard');
+            } catch (e) {
+                console.error('Profile load failed:', e);
+                alert('Failed to load profile: ' + e.message);
+                showScreen('auth');
+            }
+        } else {
+            currentProfile = null;
+            todayLog = null;
+            showScreen('auth');
+        }
+    });
+
+    // Show appropriate screen
+    if (session) {
+        currentSession = session;
+        try {
+            currentProfile = await fetchProfile();
+            setupRealtime();
+            showScreen('dashboard');
+        } catch (e) {
+            showScreen('auth');
+        }
+    } else {
+        showScreen('auth');
+    }
 }
 
 document.addEventListener('DOMContentLoaded', init);
