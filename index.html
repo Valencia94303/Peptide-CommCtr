@@ -15,13 +15,62 @@
         input[type="number"] { -moz-appearance: textfield; }
 
         /* Animations */
-        .fade-in { animation: fadeIn 0.25s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease-out both; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Staggered card entrance */
+        .stagger { opacity: 0; animation: fadeIn 0.4s ease-out both; }
+        .stagger:nth-child(1) { animation-delay: 0s; }
+        .stagger:nth-child(2) { animation-delay: 0.06s; }
+        .stagger:nth-child(3) { animation-delay: 0.12s; }
+        .stagger:nth-child(4) { animation-delay: 0.18s; }
+        .stagger:nth-child(5) { animation-delay: 0.24s; }
+        .stagger:nth-child(6) { animation-delay: 0.30s; }
+        .stagger:nth-child(7) { animation-delay: 0.36s; }
+
+        /* Expiry pulse */
         @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); } }
         .expiry-pulse { animation: pulse-glow 2s ease-in-out infinite; }
-        @keyframes checkPop { 0% { transform: scale(0.8); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
-        .check-pop { animation: checkPop 0.3s ease-out; }
-        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+        /* Shot logged check pop + ripple */
+        @keyframes checkPop { 0% { transform: scale(0.85); } 40% { transform: scale(1.08); } 100% { transform: scale(1); } }
+        .check-pop { animation: checkPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes shotRipple { 0% { box-shadow: 0 0 0 0 rgba(4, 120, 87, 0.5); } 100% { box-shadow: 0 0 0 16px rgba(4, 120, 87, 0); } }
+        .shot-ripple { animation: shotRipple 0.6s ease-out; }
+
+        /* Progress bar fill */
+        @keyframes barFill { from { width: 0%; } }
+        .bar-animate { animation: barFill 0.8s ease-out both; }
+        .bar-animate-delay-1 { animation: barFill 0.8s ease-out 0.1s both; }
+        .bar-animate-delay-2 { animation: barFill 0.8s ease-out 0.2s both; }
+
+        /* Workout complete celebration */
+        @keyframes workoutDone { 0% { transform: scale(0.9); opacity: 0.5; } 50% { transform: scale(1.03); } 100% { transform: scale(1); opacity: 1; } }
+        .workout-done-anim { animation: workoutDone 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+        /* Protocol card breathing glow */
+        @keyframes breathe { 0%, 100% { box-shadow: 0 2px 12px rgba(245, 158, 11, 0.05); } 50% { box-shadow: 0 2px 20px rgba(245, 158, 11, 0.12); } }
+        .card-breathe { animation: breathe 4s ease-in-out infinite; }
+
+        /* Slide transitions */
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes slideInLeft { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: translateX(0); } }
+        .slide-in-right { animation: slideInRight 0.3s ease-out both; }
+        .slide-in-left { animation: slideInLeft 0.3s ease-out both; }
+
+        /* Number pop on change */
+        @keyframes numPop { 0% { transform: scale(1); } 50% { transform: scale(1.15); color: #f59e0b; } 100% { transform: scale(1); } }
+        .num-pop { animation: numPop 0.3s ease-out; }
+
+        /* Floating idle for hero icons */
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+        .float { animation: float 3s ease-in-out infinite; }
+
+        /* Modal enter */
+        @keyframes modalSlideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+        .modal-enter { animation: modalSlideUp 0.3s ease-out both; }
+
+        /* Spinner */
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
 
@@ -90,7 +139,7 @@
     <!-- ==================== AUTH SCREEN ==================== -->
     <div id="screen-auth" class="p-6 flex flex-col items-center justify-center min-h-screen fade-in auth-bg">
         <div class="text-center mb-10">
-            <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-lg shadow-amber-900/20">&#x1F9EA;</div>
+            <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-lg shadow-amber-900/20 float">&#x1F9EA;</div>
             <h1 class="text-3xl font-extrabold text-gradient">Peptide Command Center</h1>
             <p class="text-gray-500 mt-2 text-sm font-medium">Your daily protocol, simplified</p>
         </div>
@@ -147,7 +196,7 @@
 
 <!-- ==================== MODAL OVERLAY ==================== -->
 <div id="modal-overlay" class="hidden fixed inset-0 bg-black/85 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onclick="if(event.target===this)closeModal()">
-    <div id="modal-box" class="bg-gray-900 border border-gray-700/50 rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto fade-in shadow-2xl">
+    <div id="modal-box" class="bg-gray-900 border border-gray-700/50 rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto modal-enter shadow-2xl">
         <div class="w-10 h-1 bg-gray-700 rounded-full mx-auto mt-3 sm:hidden"></div>
         <div id="modal-content" class="p-6"></div>
     </div>
@@ -549,10 +598,24 @@ function setBtnLoading(id, loading) {
 // ║                 7. NAVIGATION                               ║
 // ╚══════════════════════════════════════════════════════════════╝
 
+let lastScreen = 'auth';
+const screenOrder = ['auth','dashboard','lab','workout','settings'];
+
 function showScreen(name) {
-    document.querySelectorAll('#app > div').forEach(el => el.classList.add('hidden'));
+    const fromIdx = screenOrder.indexOf(lastScreen);
+    const toIdx = screenOrder.indexOf(name);
+    const direction = toIdx >= fromIdx ? 'slide-in-right' : 'slide-in-left';
+
+    document.querySelectorAll('#app > div').forEach(el => {
+        el.classList.add('hidden');
+        el.classList.remove('fade-in','slide-in-right','slide-in-left');
+    });
     const screen = document.getElementById('screen-' + name);
-    if (screen) { screen.classList.remove('hidden'); screen.classList.add('fade-in'); }
+    if (screen) {
+        screen.classList.remove('hidden');
+        screen.classList.add(name === 'auth' ? 'fade-in' : direction);
+    }
+    lastScreen = name;
     window.scrollTo(0, 0);
 
     if (name === 'auth') renderAuthForm();
@@ -657,7 +720,7 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     const windowGradient = isMorning ? 'from-blue-900/40 to-blue-950/20' : 'from-purple-900/40 to-purple-950/20';
     const windowBorder = isMorning ? 'border-blue-800/30' : 'border-purple-800/30';
     const windowTextColor = isMorning ? 'text-blue-400' : 'text-purple-400';
-    html += `<div class="card card-glow">
+    html += `<div class="card card-glow card-breathe stagger">
         <div class="flex items-center justify-between mb-3">
             <div class="section-title mb-0">${DAYS[dayOfWeek()]}'s Protocol</div>
             <div class="text-xs font-bold ${windowTextColor} bg-gray-800/80 px-2.5 py-1 rounded-full">${windowLabel}</div>
@@ -687,7 +750,7 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
             const units = (pen && dose) ? calcUnitsFromConc(dose, pen.concentration) : null;
 
             html += `<div class="mb-2">
-                <button onclick="logShot('${peptide}')" class="btn-shot ${logged ? 'btn-shot-done check-pop' : 'btn-shot-pending'}">
+                <button onclick="logShot('${peptide}')" class="btn-shot ${logged ? 'btn-shot-done check-pop shot-ripple' : 'btn-shot-pending'}">
                     <span class="text-xl">${logged ? '&#x2705;' : '&#x1F489;'}</span>
                     <span class="flex-1 text-left">${logged ? peptide + ' Logged' : 'Log ' + peptide}</span>
                     ${units ? '<span class="dose-pill text-amber-400 font-extrabold text-sm">'+units+'u</span>' : ''}
@@ -716,15 +779,15 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     const calPct = log.calories ? Math.min(100, (parseFloat(log.calories) / p.calorie_target * 100)).toFixed(0) : 0;
     const proPct = log.protein ? Math.min(100, (parseFloat(log.protein) / p.protein_min * 100)).toFixed(0) : 0;
     const watPct = log.water ? Math.min(100, (parseFloat(log.water) / p.water_target * 100)).toFixed(0) : 0;
-    html += `<div class="card">
+    html += `<div class="card stagger">
         <div class="section-title">Daily Tracking</div>
         <div class="grid grid-cols-3 gap-2 mb-3">
             <div class="stat-mini"><div class="stat-mini-value ${calPct >= 90 ? 'text-emerald-400' : calPct > 0 ? 'text-amber-400' : 'text-gray-600'}">${log.calories || '\u2014'}</div><div class="stat-mini-label">cal / ${p.calorie_target}</div>
-                <div class="w-full bg-gray-800 rounded-full h-1 mt-1.5"><div class="bg-amber-500 h-1 rounded-full transition-all" style="width:${calPct}%"></div></div></div>
+                <div class="w-full bg-gray-800 rounded-full h-1.5 mt-1.5"><div class="bg-gradient-to-r from-amber-600 to-amber-400 h-1.5 rounded-full bar-animate" style="width:${calPct}%"></div></div></div>
             <div class="stat-mini"><div class="stat-mini-value ${proPct >= 90 ? 'text-emerald-400' : proPct > 0 ? 'text-amber-400' : 'text-gray-600'}">${log.protein || '\u2014'}</div><div class="stat-mini-label">pro / ${p.protein_min}g</div>
-                <div class="w-full bg-gray-800 rounded-full h-1 mt-1.5"><div class="bg-blue-500 h-1 rounded-full transition-all" style="width:${proPct}%"></div></div></div>
+                <div class="w-full bg-gray-800 rounded-full h-1.5 mt-1.5"><div class="bg-gradient-to-r from-blue-600 to-blue-400 h-1.5 rounded-full bar-animate-delay-1" style="width:${proPct}%"></div></div></div>
             <div class="stat-mini"><div class="stat-mini-value ${watPct >= 90 ? 'text-emerald-400' : watPct > 0 ? 'text-amber-400' : 'text-gray-600'}">${log.water || '\u2014'}</div><div class="stat-mini-label">oz / ${p.water_target}</div>
-                <div class="w-full bg-gray-800 rounded-full h-1 mt-1.5"><div class="bg-cyan-500 h-1 rounded-full transition-all" style="width:${watPct}%"></div></div></div>
+                <div class="w-full bg-gray-800 rounded-full h-1.5 mt-1.5"><div class="bg-gradient-to-r from-cyan-600 to-cyan-400 h-1.5 rounded-full bar-animate-delay-2" style="width:${watPct}%"></div></div></div>
         </div>
         <div class="grid grid-cols-2 gap-3">
             <div><label class="label">Calories</label>
@@ -744,7 +807,7 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
 
     // === WORKOUT ===
     const capWk = profileIs(p,'karen') ? Math.min(wk,12) : Math.min(wk,4);
-    html += `<div class="card"><div class="section-title">Workout &mdash; Week ${capWk}</div>`;
+    html += `<div class="card stagger"><div class="section-title">Workout &mdash; Week ${capWk}</div>`;
     if (profileIs(p,'grumpy')) {
         if (todaySched.type==='training') {
             const plan = GRUMPY_CALISTHENICS[Math.min(wk,4)-1];
@@ -766,7 +829,7 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     } else { html += `<div class="text-gray-300 mb-3">${todaySched.workout}</div>`; }
 
     const done = log.workout && log.workout.completed;
-    html += `<button onclick="toggleWorkout()" class="btn-shot ${done?'btn-shot-done check-pop':'bg-gray-800 border border-gray-700 text-gray-300'}" style="${done?'':'box-shadow:none'}" >
+    html += `<button onclick="toggleWorkout()" class="btn-shot ${done?'btn-shot-done workout-done-anim':'bg-gray-800 border border-gray-700 text-gray-300'}" style="${done?'':'box-shadow:none'}" >
         <span class="text-xl">${done ? '&#x2705;' : '&#x25CB;'}</span>
         <span class="flex-1 text-left font-bold">${done ? 'Workout Complete' : 'Mark Workout Complete'}</span>
     </button>
@@ -775,13 +838,13 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     // === WEIGHT CHART ===
     const totalLoss = p.start_weight && latestW ? (p.start_weight - latestW).toFixed(1) : null;
     const remaining = p.goal_weight && latestW ? (latestW - p.goal_weight).toFixed(1) : null;
-    html += `<div class="card"><div class="section-title">Weight Progress</div>`;
+    html += `<div class="card stagger"><div class="section-title">Weight Progress</div>`;
     if (totalLoss && remaining && parseFloat(remaining) > 0) {
         const progressPct = Math.min(100, (parseFloat(totalLoss) / (p.start_weight - p.goal_weight) * 100)).toFixed(0);
         html += `<div class="flex items-center gap-3 mb-3">
             <div class="flex-1">
                 <div class="flex justify-between text-xs mb-1"><span class="text-gray-400">${totalLoss} lbs lost</span><span class="text-amber-400 font-bold">${remaining} lbs to go</span></div>
-                <div class="w-full bg-gray-800 rounded-full h-2"><div class="bg-gradient-to-r from-amber-500 to-amber-400 h-2 rounded-full transition-all" style="width:${progressPct}%"></div></div>
+                <div class="w-full bg-gray-800 rounded-full h-2"><div class="bg-gradient-to-r from-amber-500 to-amber-400 h-2 rounded-full bar-animate" style="width:${progressPct}%"></div></div>
             </div>
             <div class="text-2xl font-extrabold text-gradient">${progressPct}%</div>
         </div>`;
