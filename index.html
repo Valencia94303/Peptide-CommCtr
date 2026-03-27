@@ -390,7 +390,10 @@ async function fetchProfile() {
     if (!data) {
         const dn = currentSession.user.user_metadata?.display_name || 'User';
         const defaults = getProfileDefaults(dn);
-        const { data: created, error: e2 } = await sb.from('profiles').insert({ id: currentSession.user.id, display_name: dn, ...defaults }).select().single();
+        const isAdminUser = currentSession.user.email === ADMIN_EMAIL;
+        const { data: created, error: e2 } = await sb.from('profiles').insert({
+            id: currentSession.user.id, display_name: dn, is_admin: isAdminUser, ...defaults
+        }).select().single();
         if (e2) throw e2;
         return created;
     }
