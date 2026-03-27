@@ -209,7 +209,8 @@ const NOGO_KAREN = [
 let currentSession = null;
 let currentProfile = null;
 let todayLog = null;       // cached today log for current user
-let cachedVials = [];      // active mixed vials
+let cachedMasters = [];    // active master vials
+let cachedPens = [];       // active pens
 let cachedPeptideTypes = [];
 let cachedInventory = [];
 let weightChart = null;
@@ -225,6 +226,7 @@ function formatDateLong(str) { return new Date(str+'T12:00:00').toLocaleDateStri
 function formatDateShort(str) { const d=new Date(str+'T12:00:00'); return (d.getMonth()+1)+'/'+d.getDate(); }
 function daysSince(dateStr) { const t=new Date(dateStr+'T12:00:00'),n=new Date();n.setHours(12,0,0,0); return Math.floor((n-t)/86400000); }
 function calcUnits(doseMg,vialMg,waterMl) { if(!vialMg||!waterMl||!doseMg)return 0; return((doseMg/vialMg)*waterMl*100).toFixed(1); }
+function calcUnitsFromConc(doseMg, concMgPerMl) { if(!doseMg||!concMgPerMl)return 0; return((doseMg/concMgPerMl)*100).toFixed(1); }
 
 function weekNum(profile) {
     if (!profile || !profile.program_start) return 1;
@@ -352,26 +354,55 @@ async function fetchLatestWeight() {
     return data ? parseFloat(data.weight) : null;
 }
 
-async function fetchActiveVials() {
-    const { data, error } = await sb.from('mixed_vials').select('*').eq('depleted', false).order('mixed_date', { ascending: false });
+// --- Master Vials ---
+async function fetchActiveMasters() {
+    const { data, error } = await sb.from('master_vials').select('*').eq('depleted', false).order('mixed_date', { ascending: false });
     if (error) throw error;
-    cachedVials = data || [];
-    return cachedVials;
+    cachedMasters = data || [];
+    return cachedMasters;
 }
 
-async function fetchAllVials() {
-    const { data, error } = await sb.from('mixed_vials').select('*').order('mixed_date', { ascending: false });
-    if (error) throw error;
-    return data || [];
-}
-
-async function insertVial(peptide, vialMg, waterMl, mixedDate) {
-    const { error } = await sb.from('mixed_vials').insert({ peptide, vial_mg: vialMg, water_ml: waterMl, mixed_date: mixedDate });
+async function insertMasterVial(peptide, totalMg, totalMl, mixedDate) {
+    const concentration = totalMg / totalMl;
+    const { error } = await sb.from('master_vials').insert({
+        peptide, total_mg: totalMg, total_ml: totalMl,
+        concentration, remaining_ml: totalMl, mixed_date: mixedDate
+    });
     if (error) throw error;
 }
 
-async function markVialDepleted(id) {
-    const { error } = await sb.from('mixed_vials').update({ depleted: true }).eq('id', id);
+async function updateMasterRemaining(id, newRemainingMl) {
+    const updates = { remaining_ml: newRemainingMl };
+    if (newRemainingMl <= 0) updates.depleted = true;
+    const { error } = await sb.from('master_vials').update(updates).eq('id', id);
+    if (error) throw error;
+}
+
+async function markMasterDepleted(id) {
+    const { error } = await sb.from('master_vials').update({ depleted: true }).eq('id', id);
+    if (error) throw error;
+}
+
+// --- Pens ---
+async function fetchActivePens() {
+    const { data, error } = await sb.from('pens').select('*').eq('depleted', false).order('filled_date', { ascending: false });
+    if (error) throw error;
+    cachedPens = data || [];
+    return cachedPens;
+}
+
+async function insertPen(masterVialId, peptide, mlFromMaster, mlFreshWater, totalMl, mgContent, concentration, filledDate) {
+    const { error } = await sb.from('pens').insert({
+        master_vial_id: masterVialId, peptide,
+        ml_from_master: mlFromMaster, ml_fresh_water: mlFreshWater,
+        total_ml: totalMl, mg_content: mgContent,
+        concentration, filled_date: filledDate
+    });
+    if (error) throw error;
+}
+
+async function markPenDepleted(id) {
+    const { error } = await sb.from('pens').update({ depleted: true }).eq('id', id);
     if (error) throw error;
 }
 
@@ -516,16 +547,16 @@ async function loadDashboard() {
 
     showLoading('dash-content');
     try {
-        const [log, vials, weightHist, rate, latestW] = await Promise.all([
-            ensureTodayLog(), fetchActiveVials(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight()
+        const [log, pens, masters, weightHist, rate, latestW] = await Promise.all([
+            ensureTodayLog(), fetchActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight()
         ]);
-        renderDashboard(p, log, vials, weightHist, rate, latestW);
+        renderDashboard(p, log, pens, masters, weightHist, rate, latestW);
     } catch (e) {
         document.getElementById('dash-content').innerHTML = `<div class="text-center py-12 text-red-400">${e.message}</div>`;
     }
 }
 
-function renderDashboard(p, log, vials, weightHist, rate, latestW) {
+function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     const schedule = getSchedule(p);
     const todaySched = schedule[dayOfWeek()];
     const wk = weekNum(p);
@@ -545,10 +576,17 @@ function renderDashboard(p, log, vials, weightHist, rate, latestW) {
         </div>`;
     }
     if (isAdmin(p)) {
-        vials.forEach(v => {
+        masters.forEach(v => {
             if (daysSince(v.mixed_date) > 28) {
                 html += `<div class="bg-red-900/60 border border-red-700 rounded-xl p-3">
-                    <div class="font-bold text-red-400 text-sm">&#x26A0; ${v.peptide} vial (${v.vial_mg}mg) EXPIRED &mdash; ${daysSince(v.mixed_date)} days old</div>
+                    <div class="font-bold text-red-400 text-sm">&#x26A0; ${v.peptide} Master (${v.total_mg}mg) EXPIRED &mdash; ${daysSince(v.mixed_date)} days old</div>
+                </div>`;
+            }
+        });
+        pens.forEach(pen => {
+            if (daysSince(pen.filled_date) > 28) {
+                html += `<div class="bg-red-900/60 border border-red-700 rounded-xl p-3">
+                    <div class="font-bold text-red-400 text-sm">&#x26A0; ${pen.peptide} Pen EXPIRED &mdash; ${daysSince(pen.filled_date)} days old</div>
                 </div>`;
             }
         });
@@ -573,20 +611,20 @@ function renderDashboard(p, log, vials, weightHist, rate, latestW) {
         </button>`;
     }
 
-    const activeVial = vials.find(v => v.peptide === todaySched.peptide);
+    const activePen = pens.find(pen => pen.peptide === todaySched.peptide);
     const userDose = p.current_doses ? p.current_doses[todaySched.peptide] : null;
-    if (activeVial && userDose) {
-        const units = calcUnits(userDose, activeVial.vial_mg, activeVial.water_ml);
-        const age = daysSince(activeVial.mixed_date), expiring = age >= 25, expired = age > 28;
+    if (activePen && userDose) {
+        const units = calcUnitsFromConc(userDose, activePen.concentration);
+        const age = daysSince(activePen.filled_date), expiring = age >= 25, expired = age > 28;
         html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':''}">
             <div class="flex justify-between items-center">
-                <span class="text-gray-400 text-sm">Your dose: ${userDose}mg</span>
+                <span class="text-gray-400 text-sm">Your dose: ${userDose}mg @ ${activePen.concentration} mg/mL</span>
                 <span class="text-xl font-bold text-amber-400">Pull ${units} units</span>
             </div>
-            ${expired?'<div class="text-red-400 text-sm font-bold mt-1">&#x26A0; VIAL EXPIRED ('+age+'d) &mdash; REPLACE</div>':expiring?'<div class="text-yellow-400 text-sm mt-1">&#x26A0; Expires in '+(28-age)+' day(s)</div>':'<div class="text-gray-500 text-xs mt-1">Mixed '+age+' day(s) ago</div>'}
+            ${expired?'<div class="text-red-400 text-sm font-bold mt-1">&#x26A0; PEN EXPIRED ('+age+'d) &mdash; REFILL</div>':expiring?'<div class="text-yellow-400 text-sm mt-1">&#x26A0; Pen expires in '+(28-age)+' day(s)</div>':'<div class="text-gray-500 text-xs mt-1">Filled '+age+' day(s) ago &bull; '+activePen.mg_content+'mg in '+activePen.total_ml+'mL</div>'}
         </div>`;
     } else if (todaySched.peptides?.length > 0 && todaySched.type !== 'rest') {
-        const m = []; if(!activeVial)m.push('no mixed vial'); if(!userDose)m.push('dose not set');
+        const m = []; if(!activePen)m.push('no active pen'); if(!userDose)m.push('dose not set');
         html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 text-gray-500 text-sm text-center">Cannot calculate units (${m.join(', ')}) &mdash; see Admin Lab</div>`;
     }
     html += '</div>';
@@ -716,15 +754,15 @@ async function loadLab(preserveScroll) {
     const scrollY = preserveScroll ? window.scrollY : 0;
     if (!preserveScroll) showLoading('lab-content');
     try {
-        const [vials, types, inv, profiles] = await Promise.all([
-            fetchActiveVials(), fetchPeptideTypes(), fetchInventory(), fetchAllProfiles()
+        const [masters, pens, types, inv, profiles] = await Promise.all([
+            fetchActiveMasters(), fetchActivePens(), fetchPeptideTypes(), fetchInventory(), fetchAllProfiles()
         ]);
-        renderLab(vials, types, inv, profiles);
+        renderLab(masters, pens, types, inv, profiles);
         if (preserveScroll) setTimeout(() => window.scrollTo(0, scrollY), 50);
     } catch (e) { document.getElementById('lab-content').innerHTML = `<div class="text-red-400 text-center py-12">${e.message}</div>`; }
 }
 
-function renderLab(vials, types, inv, profiles) {
+function renderLab(masters, pens, types, inv, profiles) {
     let html = '';
 
     // === MIXING CALCULATOR ===
@@ -740,39 +778,73 @@ function renderLab(vials, types, inv, profiles) {
                 <div><label class="label">Units to Pull</label><div id="mix-units" class="input-field bg-gray-950 text-amber-400 font-bold text-center">&mdash;</div></div>
             </div></div></div>`;
 
-    // === MIX NEW VIAL ===
-    html += `<div class="card"><div class="section-title">Mix a New Vial</div>
-        <p class="text-xs text-gray-500 mb-3">Reconstitute a vial from inventory. Enters the shared pool.</p>
+    // === RECONSTITUTE MASTER VIAL ===
+    html += `<div class="card"><div class="section-title">&#x1F9EA; Step 1: Reconstitute Master Vial</div>
+        <p class="text-xs text-gray-500 mb-3">Add BAC water to an unmixed vial. This creates a Mother Vial you'll draw from later.</p>
         <div class="space-y-3">
-            <div><label class="label">Peptide</label><select class="input-field" id="vial-peptide"><option value="">Select...</option>
+            <div><label class="label">Peptide</label><select class="input-field" id="master-peptide"><option value="">Select...</option>
                 ${types.map(t=>`<option>${t.name}</option>`).join('')}</select></div>
             <div class="grid grid-cols-2 gap-3">
-                <div><label class="label">Vial MG</label><input type="number" inputmode="decimal" class="input-field" id="vial-mg" placeholder="e.g. 20"></div>
-                <div><label class="label">BAC Water (mL)</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="vial-water" placeholder="e.g. 2"></div>
+                <div><label class="label">Total MG in vial</label><input type="number" inputmode="decimal" class="input-field" id="master-mg" placeholder="e.g. 20"></div>
+                <div><label class="label">BAC Water (mL)</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="master-water" placeholder="e.g. 2"></div>
             </div>
-            <div><label class="label">Date Mixed</label><input type="date" class="input-field" id="vial-date" value="${todayStr()}"></div>
-            <button onclick="mixVial()" class="btn-primary">&#x1F9EA; Mix &amp; Register Vial</button>
+            <div id="master-preview" class="bg-gray-800 rounded-lg p-3 text-center text-gray-600 text-sm">Concentration will show here</div>
+            <div><label class="label">Date Mixed</label><input type="date" class="input-field" id="master-date" value="${todayStr()}"></div>
+            <button onclick="reconstituteMaster()" class="btn-primary">&#x1F9EA; Reconstitute Master</button>
         </div></div>`;
 
-    // === ACTIVE MIXED VIALS ===
-    html += `<div class="card"><div class="section-title">Active Mixed Vials</div>`;
-    if (vials.length === 0) { html += '<div class="text-gray-600 text-sm text-center py-4">No mixed vials yet</div>'; }
-    else { vials.forEach(v => {
-        const age = daysSince(v.mixed_date), expired = age > 28, expiring = age >= 25;
-        const conc = (v.vial_mg / (v.water_ml * 100)).toFixed(4);
+    // === ACTIVE MASTER VIALS ===
+    html += `<div class="card"><div class="section-title">Active Master Vials</div>`;
+    if (masters.length === 0) { html += '<div class="text-gray-600 text-sm text-center py-4">No master vials yet</div>'; }
+    else { masters.forEach(m => {
+        const age = daysSince(m.mixed_date), expired = age > 28, expiring = age >= 25;
+        const pct = m.total_ml > 0 ? ((m.remaining_ml / m.total_ml) * 100).toFixed(0) : 0;
+        html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
+            <div class="flex justify-between items-start"><div class="flex-1">
+                <div class="font-bold text-white">${m.peptide} <span class="text-xs text-gray-500">Master</span></div>
+                <div class="text-xs text-gray-400">${m.total_mg}mg in ${m.total_ml}mL &bull; <span class="text-amber-400 font-bold">${m.concentration} mg/mL</span></div>
+                <div class="text-xs text-gray-400">Remaining: ${m.remaining_ml}mL of ${m.total_ml}mL (${pct}%)</div>
+                <div class="w-full bg-gray-700 rounded-full h-1.5 mt-1"><div class="bg-amber-500 h-1.5 rounded-full" style="width:${pct}%"></div></div>
+                <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'} mt-1">
+                    Mixed: ${formatDate(m.mixed_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
+            </div>
+            <button onclick="depleteMaster('${m.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div></div>`; }); }
+    html += '</div>';
+
+    // === FILL A PEN ===
+    html += `<div class="card"><div class="section-title">&#x1F58A;&#xFE0F; Step 2: Fill a Pen</div>
+        <p class="text-xs text-gray-500 mb-3">Draw from a Master Vial into a 3mL pen. Optionally dilute with fresh BAC water.</p>
+        <div class="space-y-3">
+            <div><label class="label">Draw from Master</label><select class="input-field" id="pen-master" onchange="updatePenPreview()"><option value="">Select master vial...</option>
+                ${masters.map(m=>`<option value="${m.id}" data-conc="${m.concentration}" data-remaining="${m.remaining_ml}" data-peptide="${m.peptide}">${m.peptide} &mdash; ${m.concentration} mg/mL (${m.remaining_ml}mL left)</option>`).join('')}</select></div>
+            <div class="grid grid-cols-2 gap-3">
+                <div><label class="label">mL from Master</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="pen-ml-master" placeholder="e.g. 1.5" oninput="updatePenPreview()"></div>
+                <div><label class="label">mL fresh BAC water</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="pen-ml-water" placeholder="e.g. 1.5" oninput="updatePenPreview()"></div>
+            </div>
+            <div id="pen-preview" class="bg-gray-800 rounded-lg p-3 text-gray-600 text-sm">Select a master and enter volumes</div>
+            <div><label class="label">Date Filled</label><input type="date" class="input-field" id="pen-date" value="${todayStr()}"></div>
+            <button onclick="fillPen()" class="btn-primary">&#x1F58A;&#xFE0F; Fill Pen</button>
+        </div></div>`;
+
+    // === ACTIVE PENS ===
+    html += `<div class="card"><div class="section-title">Active Pens</div>`;
+    if (pens.length === 0) { html += '<div class="text-gray-600 text-sm text-center py-4">No active pens</div>'; }
+    else { pens.forEach(pen => {
+        const age = daysSince(pen.filled_date), expired = age > 28, expiring = age >= 25;
         html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
             <div class="flex justify-between items-start"><div>
-                <div class="font-bold text-white">${v.peptide}</div>
-                <div class="text-xs text-gray-400">${v.vial_mg}mg in ${v.water_ml}mL (${v.water_ml*100} units) &bull; ${conc} mg/unit</div>
+                <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span></div>
+                <div class="text-xs text-gray-400">${pen.mg_content}mg in ${pen.total_ml}mL &bull; <span class="text-amber-400 font-bold">${pen.concentration} mg/mL</span></div>
+                <div class="text-xs text-gray-400">${pen.ml_from_master}mL master + ${pen.ml_fresh_water}mL water</div>
                 <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'}">
-                    Mixed: ${formatDate(v.mixed_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
+                    Filled: ${formatDate(pen.filled_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
             </div>
-            <button onclick="depleteVial('${v.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div></div>`; }); }
+            <button onclick="depletePen('${pen.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div></div>`; }); }
     html += '</div>';
 
     // === USER DOSE MANAGEMENT ===
     html += `<div class="card"><div class="section-title">User Dose Management</div>
-        <p class="text-xs text-gray-500 mb-3">Set each user's current dose per peptide. Adjust as you titrate (3-Week Rule).</p>`;
+        <p class="text-xs text-gray-500 mb-3">Set each user's current dose. Units auto-calculate from their active pen's concentration.</p>`;
     profiles.forEach(u => {
         const doses = u.current_doses || {};
         const pepList = u.peptide_type ? u.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
@@ -780,14 +852,14 @@ function renderLab(vials, types, inv, profiles) {
         html += `<div class="bg-gray-800 rounded-lg p-3 mb-3"><div class="font-bold text-amber-400 text-sm mb-2">${u.display_name}</div><div class="space-y-2">`;
         pepList.forEach(pep => {
             const mg = doses[pep] || '';
-            const vial = vials.find(v => v.peptide === pep);
-            const preview = (vial && mg) ? calcUnits(mg, vial.vial_mg, vial.water_ml)+' units' : '';
+            const pen = pens.find(p => p.peptide === pep);
+            const preview = (pen && mg) ? calcUnitsFromConc(mg, pen.concentration)+' units @ '+pen.concentration+' mg/mL' : '';
             html += `<div class="flex items-center gap-2">
                 <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
                 <span class="text-xs text-gray-400 w-24 shrink-0">${pep}</span>
                 <input type="number" inputmode="decimal" step="0.25" class="input-field text-sm py-2" style="max-width:90px" value="${mg}" placeholder="mg" onchange="updateUserDose('${u.id}','${pep}',this.value)">
                 <span class="text-xs text-gray-500">mg</span>
-                ${preview?`<span class="text-xs text-amber-400 font-bold ml-auto">${preview}</span>`:'<span class="text-xs text-gray-600 ml-auto">no vial</span>'}
+                ${preview?`<span class="text-xs text-amber-400 font-bold ml-auto">${preview}</span>`:'<span class="text-xs text-gray-600 ml-auto">no pen</span>'}
             </div>`;
         });
         html += '</div>';
@@ -832,30 +904,103 @@ function renderLab(vials, types, inv, profiles) {
     document.getElementById('lab-content').innerHTML = html;
 }
 
-// Lab actions
+// Lab actions — Mixing Calculator
 function updateMixCalc() {
     const mg=parseFloat(document.getElementById('mix-mg')?.value), water=parseFloat(document.getElementById('mix-water')?.value), dose=parseFloat(document.getElementById('mix-dose')?.value);
     const r=document.getElementById('mix-result'), u=document.getElementById('mix-units');
-    if(mg&&water){ r.innerHTML=`<div class="text-amber-400 font-bold">${(mg/(water*100)).toFixed(4)} mg/unit</div><div class="text-gray-400 text-xs">${(water*100).toFixed(0)} total units</div>`; } else { r.innerHTML='Enter values above'; }
-    if(mg&&water&&dose){ u.textContent=calcUnits(dose,mg,water)+' units'; } else { u.innerHTML='&mdash;'; }
+    if(mg&&water){ const conc=mg/water; r.innerHTML=`<div class="text-amber-400 font-bold">${conc.toFixed(2)} mg/mL</div><div class="text-gray-400 text-xs">${(water*100).toFixed(0)} total units &bull; ${(mg/(water*100)).toFixed(4)} mg/unit</div>`; } else { r.innerHTML='Enter values above'; }
+    if(mg&&water&&dose){ const conc=mg/water; u.textContent=calcUnitsFromConc(dose,conc)+' units'; } else { u.innerHTML='&mdash;'; }
 }
 
-async function mixVial() {
-    const peptide=document.getElementById('vial-peptide').value, mg=parseFloat(document.getElementById('vial-mg').value),
-        water=parseFloat(document.getElementById('vial-water').value), date=document.getElementById('vial-date').value;
-    if(!peptide||!mg||!water||!date){ alert('Fill all fields.'); return; }
+// Lab actions — Master Vial preview
+document.addEventListener('input', e => {
+    if (e.target.id === 'master-mg' || e.target.id === 'master-water') {
+        const mg = parseFloat(document.getElementById('master-mg')?.value);
+        const ml = parseFloat(document.getElementById('master-water')?.value);
+        const el = document.getElementById('master-preview');
+        if (el && mg && ml) {
+            const conc = (mg / ml).toFixed(2);
+            el.innerHTML = `<div class="text-amber-400 font-bold">${conc} mg/mL</div><div class="text-gray-400 text-xs">${mg}mg &divide; ${ml}mL</div>`;
+        } else if (el) { el.innerHTML = 'Concentration will show here'; }
+    }
+});
+
+async function reconstituteMaster() {
+    const peptide = document.getElementById('master-peptide').value;
+    const mg = parseFloat(document.getElementById('master-mg').value);
+    const ml = parseFloat(document.getElementById('master-water').value);
+    const date = document.getElementById('master-date').value;
+    if (!peptide || !mg || !ml || !date) { alert('Fill all fields.'); return; }
     try {
-        await insertVial(peptide, mg, water, date);
-        // Auto-decrement inventory
+        await insertMasterVial(peptide, mg, ml, date);
         const match = cachedInventory.find(i => i.item_name.toLowerCase().includes(peptide.toLowerCase()));
         if (match && match.count > 0) await setInventoryCount(match.id, match.count - 1);
         await loadLab(true);
-    } catch(e){ alert('Error: '+e.message); }
+    } catch(e) { alert('Error: ' + e.message); }
 }
 
-async function depleteVial(id) {
-    if(!confirm('Mark this vial as depleted?')) return;
-    try { await markVialDepleted(id); await loadLab(true); } catch(e){ alert(e.message); }
+async function depleteMaster(id) {
+    if (!confirm('Mark this master vial as depleted?')) return;
+    try { await markMasterDepleted(id); await loadLab(true); } catch(e) { alert(e.message); }
+}
+
+// Lab actions — Pen preview & fill
+function updatePenPreview() {
+    const sel = document.getElementById('pen-master');
+    const opt = sel?.selectedOptions[0];
+    const mlMaster = parseFloat(document.getElementById('pen-ml-master')?.value);
+    const mlWater = parseFloat(document.getElementById('pen-ml-water')?.value) || 0;
+    const el = document.getElementById('pen-preview');
+    if (!el) return;
+
+    if (!opt?.value || !mlMaster) { el.innerHTML = 'Select a master and enter volumes'; return; }
+
+    const masterConc = parseFloat(opt.dataset.conc);
+    const remaining = parseFloat(opt.dataset.remaining);
+    const mgInPen = (masterConc * mlMaster);
+    const totalMl = mlMaster + mlWater;
+    const penConc = mgInPen / totalMl;
+
+    let warn = '';
+    if (mlMaster > remaining) warn = `<div class="text-red-400 text-sm font-bold mt-1">&#x26A0; Only ${remaining}mL left in master!</div>`;
+
+    el.innerHTML = `<div class="grid grid-cols-3 gap-2 text-center">
+        <div><div class="text-gray-500 text-xs">mg in pen</div><div class="text-white font-bold">${mgInPen.toFixed(2)}</div></div>
+        <div><div class="text-gray-500 text-xs">total mL</div><div class="text-white font-bold">${totalMl.toFixed(1)}</div></div>
+        <div><div class="text-gray-500 text-xs">concentration</div><div class="text-amber-400 font-bold">${penConc.toFixed(2)} mg/mL</div></div>
+    </div>${warn}`;
+}
+
+async function fillPen() {
+    const sel = document.getElementById('pen-master');
+    const opt = sel?.selectedOptions[0];
+    const mlMaster = parseFloat(document.getElementById('pen-ml-master')?.value);
+    const mlWater = parseFloat(document.getElementById('pen-ml-water')?.value) || 0;
+    const date = document.getElementById('pen-date').value;
+
+    if (!opt?.value || !mlMaster || !date) { alert('Select a master vial and enter mL to draw.'); return; }
+
+    const masterId = opt.value;
+    const masterConc = parseFloat(opt.dataset.conc);
+    const remaining = parseFloat(opt.dataset.remaining);
+    const peptide = opt.dataset.peptide;
+
+    if (mlMaster > remaining) { alert(`Only ${remaining}mL remaining in that master. Reduce the draw.`); return; }
+
+    const mgInPen = masterConc * mlMaster;
+    const totalMl = mlMaster + mlWater;
+    const penConc = mgInPen / totalMl;
+
+    try {
+        await insertPen(masterId, peptide, mlMaster, mlWater, totalMl, parseFloat(mgInPen.toFixed(4)), parseFloat(penConc.toFixed(4)), date);
+        await updateMasterRemaining(masterId, parseFloat((remaining - mlMaster).toFixed(2)));
+        await loadLab(true);
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function depletePen(id) {
+    if (!confirm('Mark this pen as depleted?')) return;
+    try { await markPenDepleted(id); await loadLab(true); } catch(e) { alert(e.message); }
 }
 
 async function changeInventory(id, newCount) {
@@ -1091,17 +1236,23 @@ async function exportMyData() {
 
 function setupRealtime() {
     sb.channel('lab-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'mixed_vials' }, () => {
-            fetchActiveVials().then(() => {
-                if (!document.getElementById('screen-dashboard').classList.contains('hidden')) loadDashboard();
-                if (!document.getElementById('screen-lab').classList.contains('hidden')) loadLab();
-            });
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'master_vials' }, () => {
+            const onDash = !document.getElementById('screen-dashboard').classList.contains('hidden');
+            const onLab = !document.getElementById('screen-lab').classList.contains('hidden');
+            if (onDash) loadDashboard();
+            if (onLab) loadLab(true);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pens' }, () => {
+            const onDash = !document.getElementById('screen-dashboard').classList.contains('hidden');
+            const onLab = !document.getElementById('screen-lab').classList.contains('hidden');
+            if (onDash) loadDashboard();
+            if (onLab) loadLab(true);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
-            if (!document.getElementById('screen-lab').classList.contains('hidden')) loadLab();
+            if (!document.getElementById('screen-lab').classList.contains('hidden')) loadLab(true);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'peptide_types' }, () => {
-            if (!document.getElementById('screen-lab').classList.contains('hidden')) loadLab();
+            if (!document.getElementById('screen-lab').classList.contains('hidden')) loadLab(true);
         })
         .subscribe();
 }
