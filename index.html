@@ -843,7 +843,7 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
                 <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Current" onchange="saveDailyField('weight',this.value)"></div>`}
         </div>
         ${p.fiber_target ? `<div class="mt-3"><label class="label">Weight (lbs)</label>
-            <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Step on the scale..." onchange="saveDailyField('weight',this.value)"></div>` : ''}
+            <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Wake up, bathroom, scale" onchange="saveDailyField('weight',this.value)"></div>` : ''}
     </div>`;
 
     // === WORKOUT ===
