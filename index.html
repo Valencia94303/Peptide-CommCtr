@@ -128,34 +128,36 @@ function isAdmin(profile) {
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
+// One Shot Window: morning OR evening per day, never both.
+// shots[] = individual peptides, each gets its own Log Shot button + dosing card.
 const GRUMPY_SCHEDULE = {
-    0: { peptide: 'Glow Stack', peptides: ['GHK-Cu','BPC-157','TB-500'], workout: 'Recovery Walk + Core', type: 'recovery' },
-    1: { peptide: 'Retatrutide', peptides: ['Retatrutide'], workout: '45-min Brisk Walk', type: 'walk' },
-    2: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Calisthenics / Intervals', type: 'training' },
-    3: { peptide: 'Glow Stack', peptides: ['GHK-Cu','BPC-157','TB-500'], workout: 'Recovery Walk + Core', type: 'recovery' },
-    4: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Calisthenics / Intervals', type: 'training' },
-    5: { peptide: 'Glow Stack', peptides: ['GHK-Cu','BPC-157','TB-500'], workout: 'Recovery Walk + Core', type: 'recovery' },
-    6: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Calisthenics / Intervals', type: 'training' }
+    0: { window: 'evening', shots: ['Diamond Glow'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Bedtime \u2022 2hr post-meal' },
+    1: { window: 'morning', shots: ['Retatrutide','MOTS-c','Wolverine'], workout: '45-min Walk (The Big Reset)', type: 'walk', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    2: { window: 'morning', shots: ['MOTS-c','Wolverine'], workout: 'Calisthenics (Power)', type: 'training', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    3: { window: 'evening', shots: ['Diamond Glow'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Bedtime \u2022 2hr post-meal' },
+    4: { window: 'morning', shots: ['MOTS-c','Wolverine'], workout: '45-min Walk (Walking Flush)', type: 'walk', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    5: { window: 'evening', shots: ['Diamond Glow'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Bedtime \u2022 2hr post-meal' },
+    6: { window: 'morning', shots: ['MOTS-c','Wolverine'], workout: 'Calisthenics (Power)', type: 'training', fasting: 'Fasted (water only) \u2022 30min before activity' }
 };
 
 const KAREN_SCHEDULE = {
-    0: { peptide: 'Glow Stack', peptides: ['GHK-Cu','BPC-157','TB-500'], workout: 'Rest', type: 'rest' },
-    1: { peptide: 'Tirzepatide', peptides: ['Tirzepatide'], workout: 'Treadmill + 8lb Vest', type: 'treadmill' },
-    2: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill' },
-    3: { peptide: 'Glow Stack', peptides: ['GHK-Cu','BPC-157','TB-500'], workout: 'Rest', type: 'rest' },
-    4: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill' },
-    5: { peptide: 'Glow Stack', peptides: ['GHK-Cu','BPC-157','TB-500'], workout: 'Rest', type: 'rest' },
-    6: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill' }
+    0: { window: 'evening', shots: ['Diamond Glow'], workout: 'Rest / Core', type: 'rest', fasting: 'Bedtime \u2022 2hr post-meal' },
+    1: { window: 'morning', shots: ['Tirzepatide','MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    2: { window: 'morning', shots: ['MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    3: { window: 'evening', shots: ['Diamond Glow'], workout: 'Rest / Core', type: 'rest', fasting: 'Bedtime \u2022 2hr post-meal' },
+    4: { window: 'morning', shots: ['MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    5: { window: 'evening', shots: ['Diamond Glow'], workout: 'Rest / Core', type: 'rest', fasting: 'Bedtime \u2022 2hr post-meal' },
+    6: { window: 'morning', shots: ['MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill', fasting: 'Fasted (water only) \u2022 30min before activity' }
 };
 
 const GENERIC_SCHEDULE = {
-    0: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
-    1: { peptide: 'Primary Peptide', peptides: ['Primary'], workout: 'Exercise', type: 'training' },
-    2: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' },
-    3: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
-    4: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' },
-    5: { peptide: 'Rest', peptides: [], workout: 'Rest', type: 'rest' },
-    6: { peptide: 'MOTS-c', peptides: ['MOTS-c'], workout: 'Exercise', type: 'training' }
+    0: { window: 'evening', shots: [], workout: 'Rest', type: 'rest', fasting: '' },
+    1: { window: 'morning', shots: ['Primary'], workout: 'Exercise', type: 'training', fasting: 'Fasted' },
+    2: { window: 'morning', shots: ['MOTS-c'], workout: 'Exercise', type: 'training', fasting: 'Fasted' },
+    3: { window: 'evening', shots: [], workout: 'Rest', type: 'rest', fasting: '' },
+    4: { window: 'morning', shots: ['MOTS-c'], workout: 'Exercise', type: 'training', fasting: 'Fasted' },
+    5: { window: 'evening', shots: [], workout: 'Rest', type: 'rest', fasting: '' },
+    6: { window: 'morning', shots: ['MOTS-c'], workout: 'Exercise', type: 'training', fasting: 'Fasted' }
 };
 
 const GRUMPY_CALISTHENICS = [
@@ -182,8 +184,8 @@ const GRUMPY_CALISTHENICS = [
 ];
 
 const KAREN_TREADMILL = [
-    { weeks: [1,2], tier: 'Induction', duration: '20 min', incline: '2%', speed: '2.8-3.0 mph', sessions: 3 },
-    { weeks: [3,4,5,6], tier: 'Steady State', duration: '30 min', incline: '3-5%', speed: '3.0-3.2 mph', sessions: 4 },
+    { weeks: [1,2], tier: 'Baseline', duration: '20 min', incline: '2%', speed: '2.8-3.0 mph', sessions: 3 },
+    { weeks: [3,4,5,6], tier: 'Progression', duration: '30 min', incline: '5%', speed: '3.0 mph', sessions: 4 },
     { weeks: [7,8,9,10,11,12], tier: 'Power Burn', duration: '30-40 min', incline: '6-10%', speed: '3.0 mph', sessions: 5 }
 ];
 
@@ -196,7 +198,7 @@ const NOGO_GRUMPY = [
 
 const NOGO_KAREN = [
     { icon: '&#x26A0;&#xFE0F;', text: 'SPINACH \u2014 ALLERGY (use Bok Choy, Romaine, Cabbage)', alert: true },
-    { icon: '&#x1F35F;', text: 'Fried Foods' },
+    { icon: '&#x1F35F;', text: 'Fried Foods (incl. tempura, crispy tacos)' },
     { icon: '&#x1F95B;', text: 'Carbonated Drinks' },
     { icon: '&#x1F36D;', text: 'Liquid Sugar (juice, soda, sweet tea)' },
     { icon: '&#x1F966;', text: 'Raw Cruciferous Veggies' }
@@ -253,15 +255,15 @@ function getProfileDefaults(displayName) {
     const n = displayName.toLowerCase().trim();
     if (n === 'grumpy' || n === 'miguel') return {
         start_weight: 297, goal_weight: 207, calorie_target: 2150, protein_min: 190, protein_max: 210,
-        fiber_target: 30, water_target: 120, peptide_type: 'Retatrutide + MOTS-c + Glow Stack',
+        fiber_target: 30, water_target: 120, peptide_type: 'Retatrutide + MOTS-c + Wolverine + Diamond Glow',
         no_go_foods: NOGO_GRUMPY, warning_threshold: 4, program_start: '2026-03-25',
-        current_doses: { 'Retatrutide': 2, 'MOTS-c': 5, 'Glow Stack': 1 }
+        current_doses: { 'Retatrutide': 1.0, 'MOTS-c': 0.5, 'Wolverine': 0.5, 'Diamond Glow': 1.0 }
     };
     if (n === 'karen') return {
         start_weight: 130, goal_weight: 115, calorie_target: 1200, protein_min: 90, protein_max: 100,
-        fiber_target: 0, water_target: 80, peptide_type: 'Tirzepatide + MOTS-c + Glow Stack',
+        fiber_target: 0, water_target: 80, peptide_type: 'Tirzepatide + MOTS-c + Diamond Glow',
         no_go_foods: NOGO_KAREN, warning_threshold: 2, program_start: '2026-03-25',
-        current_doses: { 'Tirzepatide': 1.25, 'MOTS-c': 5, 'Glow Stack': 1 }
+        current_doses: { 'Tirzepatide': 1.25, 'MOTS-c': 0.5, 'Diamond Glow': 0.5 }
     };
     return { start_weight: null, goal_weight: null, calorie_target: 2000, protein_min: 120, protein_max: 150,
         fiber_target: 0, water_target: 80, peptide_type: '', no_go_foods: [], warning_threshold: 2,
@@ -391,12 +393,21 @@ async function fetchActivePens() {
     return cachedPens;
 }
 
-async function insertPen(masterVialId, peptide, mlFromMaster, mlFreshWater, totalMl, mgContent, concentration, filledDate) {
+async function fetchMyActivePens() {
+    const { data, error } = await sb.from('pens').select('*')
+        .eq('depleted', false).eq('assigned_to', currentSession.user.id)
+        .order('filled_date', { ascending: false });
+    if (error) throw error;
+    return data || [];
+}
+
+async function insertPen(masterVialId, peptide, mlFromMaster, mlFreshWater, totalMl, mgContent, concentration, filledDate, assignedTo) {
     const { error } = await sb.from('pens').insert({
         master_vial_id: masterVialId, peptide,
         ml_from_master: mlFromMaster, ml_fresh_water: mlFreshWater,
         total_ml: totalMl, mg_content: mgContent,
-        concentration, filled_date: filledDate
+        concentration, filled_date: filledDate,
+        assigned_to: assignedTo || null
     });
     if (error) throw error;
 }
@@ -548,7 +559,7 @@ async function loadDashboard() {
     showLoading('dash-content');
     try {
         const [log, pens, masters, weightHist, rate, latestW] = await Promise.all([
-            ensureTodayLog(), fetchActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight()
+            ensureTodayLog(), fetchMyActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight()
         ]);
         renderDashboard(p, log, pens, masters, weightHist, rate, latestW);
     } catch (e) {
@@ -593,39 +604,58 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     }
 
     // === TODAY'S PROTOCOL ===
+    const windowLabel = todaySched.window === 'morning' ? '&#x1F305; Morning Fasted' : '&#x1F319; Evening Bedtime';
+    const windowColor = todaySched.window === 'morning' ? 'text-blue-400' : 'text-purple-400';
     html += `<div class="card">
         <div class="section-title">Today's Protocol &mdash; ${DAYS[dayOfWeek()]}</div>
-        <div class="flex items-center gap-3 mb-3">
+        <div class="flex items-center gap-3 mb-2">
             <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg ${todaySched.type==='rest'?'bg-gray-800':todaySched.type==='training'||todaySched.type==='treadmill'?'bg-blue-900/60':todaySched.type==='walk'?'bg-green-900/60':'bg-purple-900/60'}">
-                ${todaySched.type==='rest'?'&#x1F634;':todaySched.type==='training'||todaySched.type==='treadmill'?'&#x1F4AA;':todaySched.type==='walk'?'&#x1F6B6;':'&#x2728;'}
+                ${todaySched.type==='rest'||todaySched.type==='recovery'?'&#x1F9D8;':todaySched.type==='training'||todaySched.type==='treadmill'?'&#x1F4AA;':todaySched.type==='walk'?'&#x1F6B6;':'&#x2728;'}
             </div>
-            <div><div class="font-bold text-white">${todaySched.peptide}</div><div class="text-sm text-gray-400">${todaySched.workout}</div></div>
-        </div>`;
+            <div>
+                <div class="font-bold text-white">${todaySched.workout}</div>
+                <div class="text-sm ${windowColor}">${windowLabel}</div>
+            </div>
+        </div>
+        <div class="text-xs text-gray-500 mb-3">${todaySched.fasting}</div>`;
 
-    if (todaySched.peptides && todaySched.peptides.length > 0) {
-        const shots = log.shots || {};
-        const logged = !!shots[todaySched.peptide] && (Date.now() - new Date(shots[todaySched.peptide]).getTime()) < 86400000;
-        html += `<button onclick="logShot('${todaySched.peptide}')"
-            class="w-full py-4 rounded-xl text-lg font-bold transition-all active:scale-[0.97] flex items-center justify-center gap-3 mt-2 ${logged?'bg-emerald-700 text-white':'bg-amber-600 hover:bg-amber-500 text-white'}">
-            ${logged ? '&#x2705; Shot Logged' : '&#x1F489; Log Shot &mdash; ' + todaySched.peptide}
-        </button>`;
+    // Render each peptide shot independently
+    const todayShots = todaySched.shots || [];
+    if (todayShots.length > 0) {
+        todayShots.forEach(peptide => {
+            const shotLog = log.shots || {};
+            const logged = !!shotLog[peptide] && (Date.now() - new Date(shotLog[peptide]).getTime()) < 86400000;
+
+            // Shot button
+            html += `<button onclick="logShot('${peptide}')"
+                class="w-full py-3 rounded-xl font-bold transition-all active:scale-[0.97] flex items-center justify-center gap-2 mb-2 ${logged?'bg-emerald-700 text-white':'bg-amber-600 hover:bg-amber-500 text-white'}">
+                ${logged ? '&#x2705; '+peptide+' Logged' : '&#x1F489; Log '+peptide}
+            </button>`;
+
+            // Dosing info from user's pen
+            const pen = pens.find(pe => pe.peptide === peptide);
+            const dose = p.current_doses ? p.current_doses[peptide] : null;
+            if (pen && dose) {
+                const units = calcUnitsFromConc(dose, pen.concentration);
+                const age = daysSince(pen.filled_date), expiring = age >= 25, expired = age > 28;
+                html += `<div class="bg-gray-800 rounded-lg p-2 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':''}">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-xs">${peptide}: ${dose}mg @ ${pen.concentration} mg/mL</span>
+                        <span class="text-lg font-bold text-amber-400">${units}u</span>
+                    </div>
+                    ${expired?'<div class="text-red-400 text-xs font-bold">EXPIRED ('+age+'d) \u2014 REFILL</div>':expiring?'<div class="text-yellow-400 text-xs">Expires in '+(28-age)+'d</div>':''}
+                </div>`;
+            } else if (dose) {
+                html += `<div class="bg-gray-800 rounded-lg p-2 mb-2 text-gray-600 text-xs text-center">No pen for ${peptide} \u2014 see Admin Lab</div>`;
+            }
+        });
+    } else {
+        html += '<div class="text-gray-500 text-sm text-center py-2">No shots today \u2014 recovery focus</div>';
     }
 
-    const activePen = pens.find(pen => pen.peptide === todaySched.peptide);
-    const userDose = p.current_doses ? p.current_doses[todaySched.peptide] : null;
-    if (activePen && userDose) {
-        const units = calcUnitsFromConc(userDose, activePen.concentration);
-        const age = daysSince(activePen.filled_date), expiring = age >= 25, expired = age > 28;
-        html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':''}">
-            <div class="flex justify-between items-center">
-                <span class="text-gray-400 text-sm">Your dose: ${userDose}mg @ ${activePen.concentration} mg/mL</span>
-                <span class="text-xl font-bold text-amber-400">Pull ${units} units</span>
-            </div>
-            ${expired?'<div class="text-red-400 text-sm font-bold mt-1">&#x26A0; PEN EXPIRED ('+age+'d) &mdash; REFILL</div>':expiring?'<div class="text-yellow-400 text-sm mt-1">&#x26A0; Pen expires in '+(28-age)+' day(s)</div>':'<div class="text-gray-500 text-xs mt-1">Filled '+age+' day(s) ago &bull; '+activePen.mg_content+'mg in '+activePen.total_ml+'mL</div>'}
-        </div>`;
-    } else if (todaySched.peptides?.length > 0 && todaySched.type !== 'rest') {
-        const m = []; if(!activePen)m.push('no active pen'); if(!userDose)m.push('dose not set');
-        html += `<div class="mt-3 bg-gray-800 rounded-lg p-3 text-gray-500 text-sm text-center">Cannot calculate units (${m.join(', ')}) &mdash; see Admin Lab</div>`;
+    // Protein First reminder for Karen on workout days
+    if (profileIs(p,'karen') && todaySched.window === 'morning') {
+        html += '<div class="bg-blue-900/30 border border-blue-800 rounded-lg p-2 mt-1 text-xs text-blue-300">&#x1F4AA; Protein First: Hit your 90-100g floor to protect muscle tone at 5% incline.</div>';
     }
     html += '</div>';
 
@@ -822,7 +852,11 @@ function renderLab(masters, pens, types, inv, profiles) {
                 <div><label class="label">mL fresh BAC water</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="pen-ml-water" placeholder="e.g. 1.5" oninput="updatePenPreview()"></div>
             </div>
             <div id="pen-preview" class="bg-gray-800 rounded-lg p-3 text-gray-600 text-sm">Select a master and enter volumes</div>
-            <div><label class="label">Date Filled</label><input type="date" class="input-field" id="pen-date" value="${todayStr()}"></div>
+            <div class="grid grid-cols-2 gap-3">
+                <div><label class="label">Assign To</label><select class="input-field" id="pen-assign">
+                    ${profiles.map(u=>`<option value="${u.id}">${u.display_name}</option>`).join('')}</select></div>
+                <div><label class="label">Date Filled</label><input type="date" class="input-field" id="pen-date" value="${todayStr()}"></div>
+            </div>
             <button onclick="fillPen()" class="btn-primary">&#x1F58A;&#xFE0F; Fill Pen</button>
         </div></div>`;
 
@@ -833,7 +867,7 @@ function renderLab(masters, pens, types, inv, profiles) {
         const age = daysSince(pen.filled_date), expired = age > 28, expiring = age >= 25;
         html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
             <div class="flex justify-between items-start"><div>
-                <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span></div>
+                <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span> <span class="text-xs ${pen.assigned_to ? 'text-amber-400' : 'text-gray-600'}">${pen.assigned_to ? (profiles.find(u=>u.id===pen.assigned_to)?.display_name || '') : 'unassigned'}</span></div>
                 <div class="text-xs text-gray-400">${pen.mg_content}mg in ${pen.total_ml}mL &bull; <span class="text-amber-400 font-bold">${pen.concentration} mg/mL</span></div>
                 <div class="text-xs text-gray-400">${pen.ml_from_master}mL master + ${pen.ml_fresh_water}mL water</div>
                 <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'}">
@@ -977,6 +1011,7 @@ async function fillPen() {
     const mlMaster = parseFloat(document.getElementById('pen-ml-master')?.value);
     const mlWater = parseFloat(document.getElementById('pen-ml-water')?.value) || 0;
     const date = document.getElementById('pen-date').value;
+    const assignTo = document.getElementById('pen-assign')?.value || null;
 
     if (!opt?.value || !mlMaster || !date) { alert('Select a master vial and enter mL to draw.'); return; }
 
@@ -992,7 +1027,7 @@ async function fillPen() {
     const penConc = mgInPen / totalMl;
 
     try {
-        await insertPen(masterId, peptide, mlMaster, mlWater, totalMl, parseFloat(mgInPen.toFixed(4)), parseFloat(penConc.toFixed(4)), date);
+        await insertPen(masterId, peptide, mlMaster, mlWater, totalMl, parseFloat(mgInPen.toFixed(4)), parseFloat(penConc.toFixed(4)), date, assignTo);
         await updateMasterRemaining(masterId, parseFloat((remaining - mlMaster).toFixed(2)));
         await loadLab(true);
     } catch(e) { alert('Error: ' + e.message); }
@@ -1080,9 +1115,11 @@ function renderWorkoutPlan() {
         html += `<div class="card"><div class="section-title">Weekly Metabolic Calendar</div><div class="space-y-2 text-sm">
             ${Object.entries(GRUMPY_SCHEDULE).map(([d,s])=>{
                 const today=parseInt(d)===dayOfWeek();
+                const icon = s.window==='morning' ? '&#x1F305;' : '&#x1F319;';
                 return `<div class="flex items-center gap-3 p-2 rounded-lg ${today?'bg-amber-900/30 border border-amber-700':''}">
                     <span class="w-10 font-bold ${today?'text-amber-400':'text-gray-500'}">${DAYS_SHORT[d]}</span>
-                    <span class="text-gray-300 flex-1">${s.peptide}</span>
+                    <span class="text-xs">${icon}</span>
+                    <span class="text-gray-300 flex-1">${s.shots.join(' + ') || 'Rest'}</span>
                     <span class="text-gray-500 text-xs">${s.workout}</span></div>`;
             }).join('')}</div></div>`;
         html += `<div class="card"><div class="section-title">4-Week Calisthenics Progression</div><div class="text-sm text-gray-400 mb-3">Current: Week ${Math.min(wk,4)}</div>`;
@@ -1113,9 +1150,11 @@ function renderWorkoutPlan() {
         html += `<div class="card"><div class="section-title">Weekly Schedule</div><div class="space-y-2 text-sm">
             ${Object.entries(KAREN_SCHEDULE).map(([d,s])=>{
                 const today=parseInt(d)===dayOfWeek();
+                const icon = s.window==='morning' ? '&#x1F305;' : '&#x1F319;';
                 return `<div class="flex items-center gap-3 p-2 rounded-lg ${today?'bg-amber-900/30 border border-amber-700':''}">
                     <span class="w-10 font-bold ${today?'text-amber-400':'text-gray-500'}">${DAYS_SHORT[d]}</span>
-                    <span class="text-gray-300 flex-1">${s.peptide}</span>
+                    <span class="text-xs">${icon}</span>
+                    <span class="text-gray-300 flex-1">${s.shots.join(' + ') || 'Rest'}</span>
                     <span class="text-gray-500 text-xs">${s.workout}</span></div>`;
             }).join('')}</div></div>`;
     } else {
