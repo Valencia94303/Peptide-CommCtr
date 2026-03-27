@@ -8,68 +8,115 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        * { -webkit-tap-highlight-color: transparent; }
-        body { overscroll-behavior: none; }
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { overscroll-behavior: none; -webkit-font-smoothing: antialiased; }
         input[type="number"]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; }
-        .fade-in { animation: fadeIn 0.2s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Animations */
+        .fade-in { animation: fadeIn 0.25s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); } }
         .expiry-pulse { animation: pulse-glow 2s ease-in-out infinite; }
-        .card { background: rgb(17 24 39); border: 1px solid rgb(31 41 55); border-radius: 0.75rem; padding: 1rem; }
-        .btn-primary { width: 100%; background: rgb(217 119 6); color: white; font-weight: 600; padding: 1rem 1.5rem; border-radius: 0.75rem; font-size: 1.125rem; transition: all 0.15s; border: none; cursor: pointer; }
-        .btn-primary:hover { background: rgb(245 158 11); }
-        .btn-primary:active { transform: scale(0.97); }
-        .btn-secondary { width: 100%; background: rgb(55 65 81); color: white; font-weight: 600; padding: 0.75rem 1rem; border-radius: 0.75rem; transition: all 0.15s; border: none; cursor: pointer; }
+        @keyframes checkPop { 0% { transform: scale(0.8); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        .check-pop { animation: checkPop 0.3s ease-out; }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+        /* Cards */
+        .card { background: linear-gradient(145deg, rgb(17 24 39), rgb(12 17 29)); border: 1px solid rgb(31 41 55); border-radius: 1rem; padding: 1.25rem; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .card-glow { border-color: rgba(245, 158, 11, 0.2); box-shadow: 0 2px 12px rgba(245, 158, 11, 0.08); }
+
+        /* Buttons */
+        .btn-primary { width: 100%; background: linear-gradient(135deg, rgb(217 119 6), rgb(180 83 9)); color: white; font-weight: 700; padding: 1rem 1.5rem; border-radius: 0.875rem; font-size: 1.125rem; transition: all 0.2s; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3); min-height: 56px; }
+        .btn-primary:hover { background: linear-gradient(135deg, rgb(245 158 11), rgb(217 119 6)); box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4); }
+        .btn-primary:active { transform: scale(0.97); box-shadow: 0 2px 6px rgba(217, 119, 6, 0.2); }
+        .btn-secondary { width: 100%; background: rgb(55 65 81); color: white; font-weight: 600; padding: 0.875rem 1rem; border-radius: 0.875rem; transition: all 0.2s; border: none; cursor: pointer; min-height: 48px; }
         .btn-secondary:hover { background: rgb(75 85 99); }
         .btn-secondary:active { transform: scale(0.97); }
-        .btn-danger { width: 100%; background: rgb(185 28 28); color: white; font-weight: 600; padding: 0.75rem 1rem; border-radius: 0.75rem; transition: all 0.15s; border: none; cursor: pointer; }
-        .btn-danger:hover { background: rgb(220 38 38); }
+        .btn-danger { width: 100%; background: linear-gradient(135deg, rgb(185 28 28), rgb(153 27 27)); color: white; font-weight: 600; padding: 0.875rem 1rem; border-radius: 0.875rem; transition: all 0.2s; border: none; cursor: pointer; min-height: 48px; }
+        .btn-danger:hover { background: linear-gradient(135deg, rgb(220 38 38), rgb(185 28 28)); }
         .btn-danger:active { transform: scale(0.97); }
-        .input-field { width: 100%; background: rgb(31 41 55); border: 1px solid rgb(55 65 81); border-radius: 0.5rem; padding: 0.75rem 1rem; color: white; transition: border-color 0.15s; outline: none; font-size: 1rem; }
-        .input-field::placeholder { color: rgb(107 114 128); }
-        .input-field:focus { border-color: rgb(245 158 11); }
-        .label { font-size: 0.875rem; font-weight: 500; color: rgb(156 163 175); margin-bottom: 0.25rem; display: block; }
-        .section-title { font-size: 0.75rem; font-weight: 600; color: rgb(107 114 128); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+
+        /* Shot buttons */
+        .btn-shot { width: 100%; padding: 0.875rem; border-radius: 0.875rem; font-weight: 700; font-size: 1rem; transition: all 0.2s; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 52px; }
+        .btn-shot-pending { background: linear-gradient(135deg, rgb(217 119 6), rgb(180 83 9)); color: white; box-shadow: 0 3px 10px rgba(217, 119, 6, 0.3); }
+        .btn-shot-done { background: linear-gradient(135deg, rgb(4 120 87), rgb(6 95 70)); color: white; box-shadow: 0 3px 10px rgba(4, 120, 87, 0.2); }
+        .btn-shot:active { transform: scale(0.97); }
+
+        /* Inputs */
+        .input-field { width: 100%; background: rgb(17 24 39); border: 1px solid rgb(55 65 81); border-radius: 0.625rem; padding: 0.875rem 1rem; color: white; transition: all 0.2s; outline: none; font-size: 1rem; }
+        .input-field::placeholder { color: rgb(75 85 99); }
+        .input-field:focus { border-color: rgb(245 158 11); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1); }
+        .label { font-size: 0.8rem; font-weight: 600; color: rgb(156 163 175); margin-bottom: 0.375rem; display: block; letter-spacing: 0.01em; }
+        .section-title { font-size: 0.7rem; font-weight: 700; color: rgb(107 114 128); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.875rem; }
         select.input-field { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239ca3af' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; padding-right: 2.5rem; }
-        .spinner { width: 2rem; height: 2rem; border: 2px solid rgb(245 158 11); border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Spinner */
+        .spinner { width: 2rem; height: 2rem; border: 2.5px solid rgb(245 158 11); border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+
+        /* Glass header */
+        .glass-header { background: rgba(3, 7, 18, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid rgba(245, 158, 11, 0.1); }
+
+        /* Progress ring */
+        .progress-ring { transform: rotate(-90deg); }
+        .progress-ring circle { transition: stroke-dashoffset 0.5s ease; }
+
+        /* Dosing pill */
+        .dose-pill { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 0.625rem; padding: 0.5rem 0.75rem; }
+
+        /* Gradient text */
+        .text-gradient { background: linear-gradient(135deg, #f59e0b, #d97706); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+        /* Auth background */
+        .auth-bg { background: radial-gradient(ellipse at 50% 0%, rgba(245, 158, 11, 0.06) 0%, transparent 60%); }
+
+        /* Stat card mini */
+        .stat-mini { background: rgb(17 24 39); border: 1px solid rgb(31 41 55); border-radius: 0.75rem; padding: 0.75rem; text-align: center; }
+        .stat-mini-value { font-size: 1.25rem; font-weight: 800; color: white; line-height: 1.2; }
+        .stat-mini-label { font-size: 0.65rem; font-weight: 600; color: rgb(107 114 128); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.125rem; }
+
+        /* Safe area padding for mobile */
+        @supports (padding: env(safe-area-inset-bottom)) {
+            .pb-safe { padding-bottom: calc(2rem + env(safe-area-inset-bottom)); }
+        }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-100 font-sans">
 <div id="app" class="max-w-lg mx-auto min-h-screen relative">
 
     <!-- ==================== AUTH SCREEN ==================== -->
-    <div id="screen-auth" class="p-6 flex flex-col items-center justify-center min-h-screen fade-in">
+    <div id="screen-auth" class="p-6 flex flex-col items-center justify-center min-h-screen fade-in auth-bg">
         <div class="text-center mb-10">
-            <div class="text-5xl mb-3">&#x1F9EA;</div>
-            <h1 class="text-3xl font-bold text-amber-500">Peptide Command Center</h1>
-            <p class="text-gray-500 mt-2 text-sm">Sign in to continue</p>
+            <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-lg shadow-amber-900/20">&#x1F9EA;</div>
+            <h1 class="text-3xl font-extrabold text-gradient">Peptide Command Center</h1>
+            <p class="text-gray-500 mt-2 text-sm font-medium">Your daily protocol, simplified</p>
         </div>
         <div id="auth-form" class="w-full space-y-4"></div>
     </div>
 
     <!-- ==================== DASHBOARD SCREEN ==================== -->
     <div id="screen-dashboard" class="hidden fade-in">
-        <div class="sticky top-0 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800 px-4 py-3 flex items-center justify-between z-40">
-            <div id="dash-avatar" class="w-8 h-8 bg-amber-900/50 rounded-full flex items-center justify-center text-amber-400 font-bold text-sm"></div>
-            <div class="text-center">
-                <h2 id="dash-username" class="text-lg font-bold text-amber-500"></h2>
-                <p id="dash-date" class="text-xs text-gray-500"></p>
+        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
+            <div id="dash-avatar" class="w-9 h-9 bg-gradient-to-br from-amber-500 to-amber-700 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md"></div>
+            <div class="text-center flex-1 mx-3">
+                <h2 id="dash-username" class="text-base font-extrabold text-gradient"></h2>
+                <p id="dash-date" class="text-[10px] text-gray-500 font-medium"></p>
             </div>
-            <div class="flex gap-3 items-center">
-                <button onclick="showNoGoModal()" class="text-red-500 text-xl leading-none p-1" title="No-Go Foods">&#x1F6AB;</button>
-                <button id="btn-lab" onclick="showScreen('lab')" class="text-amber-500 text-xl leading-none p-1 hidden" title="Admin Lab">&#x2697;&#xFE0F;</button>
-                <button onclick="showScreen('settings')" class="text-gray-500 text-xl leading-none p-1" title="Settings">&#x2699;&#xFE0F;</button>
+            <div class="flex gap-2 items-center">
+                <button onclick="showNoGoModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-red-900/30 text-red-400 text-lg transition active:scale-90" title="No-Go Foods">&#x1F6AB;</button>
+                <button id="btn-lab" onclick="showScreen('lab')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-amber-900/30 text-amber-400 text-lg transition active:scale-90 hidden" title="Admin Lab">&#x2697;&#xFE0F;</button>
+                <button onclick="showScreen('settings')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-800 text-gray-400 text-lg transition active:scale-90" title="Settings">&#x2699;&#xFE0F;</button>
             </div>
         </div>
-        <div id="dash-content" class="p-4 space-y-4 pb-8"></div>
+        <div id="dash-content" class="p-4 space-y-4 pb-safe"></div>
     </div>
 
     <!-- ==================== ADMIN LAB SCREEN ==================== -->
     <div id="screen-lab" class="hidden fade-in">
-        <div class="sticky top-0 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800 px-4 py-3 flex items-center justify-between z-40">
+        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
             <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
             <h2 class="text-lg font-bold text-amber-500">&#x2697;&#xFE0F; Admin Lab</h2>
             <div class="w-8"></div>
@@ -79,7 +126,7 @@
 
     <!-- ==================== WORKOUT PLAN SCREEN ==================== -->
     <div id="screen-workout" class="hidden fade-in">
-        <div class="sticky top-0 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800 px-4 py-3 flex items-center justify-between z-40">
+        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
             <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
             <h2 class="text-lg font-bold text-amber-500">Workout Plan</h2>
             <div class="w-8"></div>
@@ -89,7 +136,7 @@
 
     <!-- ==================== SETTINGS SCREEN ==================== -->
     <div id="screen-settings" class="hidden fade-in">
-        <div class="sticky top-0 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800 px-4 py-3 flex items-center justify-between z-40">
+        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
             <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
             <h2 class="text-lg font-bold text-amber-500">&#x2699;&#xFE0F; Settings</h2>
             <div class="w-8"></div>
@@ -99,8 +146,9 @@
 </div>
 
 <!-- ==================== MODAL OVERLAY ==================== -->
-<div id="modal-overlay" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)closeModal()">
-    <div id="modal-box" class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto fade-in">
+<div id="modal-overlay" class="hidden fixed inset-0 bg-black/85 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onclick="if(event.target===this)closeModal()">
+    <div id="modal-box" class="bg-gray-900 border border-gray-700/50 rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto fade-in shadow-2xl">
+        <div class="w-10 h-1 bg-gray-700 rounded-full mx-auto mt-3 sm:hidden"></div>
         <div id="modal-content" class="p-6"></div>
     </div>
 </div>
@@ -604,20 +652,27 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     }
 
     // === TODAY'S PROTOCOL ===
-    const windowLabel = todaySched.window === 'morning' ? '&#x1F305; Morning Fasted' : '&#x1F319; Evening Bedtime';
-    const windowColor = todaySched.window === 'morning' ? 'text-blue-400' : 'text-purple-400';
-    html += `<div class="card">
-        <div class="section-title">Today's Protocol &mdash; ${DAYS[dayOfWeek()]}</div>
-        <div class="flex items-center gap-3 mb-2">
-            <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg ${todaySched.type==='rest'?'bg-gray-800':todaySched.type==='training'||todaySched.type==='treadmill'?'bg-blue-900/60':todaySched.type==='walk'?'bg-green-900/60':'bg-purple-900/60'}">
-                ${todaySched.type==='rest'||todaySched.type==='recovery'?'&#x1F9D8;':todaySched.type==='training'||todaySched.type==='treadmill'?'&#x1F4AA;':todaySched.type==='walk'?'&#x1F6B6;':'&#x2728;'}
-            </div>
-            <div>
-                <div class="font-bold text-white">${todaySched.workout}</div>
-                <div class="text-sm ${windowColor}">${windowLabel}</div>
-            </div>
+    const isMorning = todaySched.window === 'morning';
+    const windowLabel = isMorning ? '&#x1F305; Morning Fasted' : '&#x1F319; Evening Bedtime';
+    const windowGradient = isMorning ? 'from-blue-900/40 to-blue-950/20' : 'from-purple-900/40 to-purple-950/20';
+    const windowBorder = isMorning ? 'border-blue-800/30' : 'border-purple-800/30';
+    const windowTextColor = isMorning ? 'text-blue-400' : 'text-purple-400';
+    html += `<div class="card card-glow">
+        <div class="flex items-center justify-between mb-3">
+            <div class="section-title mb-0">${DAYS[dayOfWeek()]}'s Protocol</div>
+            <div class="text-xs font-bold ${windowTextColor} bg-gray-800/80 px-2.5 py-1 rounded-full">${windowLabel}</div>
         </div>
-        <div class="text-xs text-gray-500 mb-3">${todaySched.fasting}</div>`;
+        <div class="bg-gradient-to-r ${windowGradient} border ${windowBorder} rounded-xl p-3 mb-3">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-xl flex items-center justify-center text-xl ${todaySched.type==='rest'||todaySched.type==='recovery'?'bg-gray-800/80':'bg-white/10'}">
+                    ${todaySched.type==='rest'||todaySched.type==='recovery'?'&#x1F9D8;':todaySched.type==='training'||todaySched.type==='treadmill'?'&#x1F4AA;':todaySched.type==='walk'?'&#x1F6B6;':'&#x2728;'}
+                </div>
+                <div>
+                    <div class="font-bold text-white text-base">${todaySched.workout}</div>
+                    <div class="text-xs text-gray-400 mt-0.5">${todaySched.fasting}</div>
+                </div>
+            </div>
+        </div>`;
 
     // Render each peptide shot independently
     const todayShots = todaySched.shots || [];
@@ -626,54 +681,65 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
             const shotLog = log.shots || {};
             const logged = !!shotLog[peptide] && (Date.now() - new Date(shotLog[peptide]).getTime()) < 86400000;
 
-            // Shot button
-            html += `<button onclick="logShot('${peptide}')"
-                class="w-full py-3 rounded-xl font-bold transition-all active:scale-[0.97] flex items-center justify-center gap-2 mb-2 ${logged?'bg-emerald-700 text-white':'bg-amber-600 hover:bg-amber-500 text-white'}">
-                ${logged ? '&#x2705; '+peptide+' Logged' : '&#x1F489; Log '+peptide}
-            </button>`;
-
-            // Dosing info from user's pen
+            // Shot button + dosing in one row
             const pen = pens.find(pe => pe.peptide === peptide);
             const dose = p.current_doses ? p.current_doses[peptide] : null;
+            const units = (pen && dose) ? calcUnitsFromConc(dose, pen.concentration) : null;
+
+            html += `<div class="mb-2">
+                <button onclick="logShot('${peptide}')" class="btn-shot ${logged ? 'btn-shot-done check-pop' : 'btn-shot-pending'}">
+                    <span class="text-xl">${logged ? '&#x2705;' : '&#x1F489;'}</span>
+                    <span class="flex-1 text-left">${logged ? peptide + ' Logged' : 'Log ' + peptide}</span>
+                    ${units ? '<span class="dose-pill text-amber-400 font-extrabold text-sm">'+units+'u</span>' : ''}
+                </button>`;
+
             if (pen && dose) {
-                const units = calcUnitsFromConc(dose, pen.concentration);
                 const age = daysSince(pen.filled_date), expiring = age >= 25, expired = age > 28;
-                html += `<div class="bg-gray-800 rounded-lg p-2 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':''}">
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-400 text-xs">${peptide}: ${dose}mg @ ${pen.concentration} mg/mL</span>
-                        <span class="text-lg font-bold text-amber-400">${units}u</span>
-                    </div>
-                    ${expired?'<div class="text-red-400 text-xs font-bold">EXPIRED ('+age+'d) \u2014 REFILL</div>':expiring?'<div class="text-yellow-400 text-xs">Expires in '+(28-age)+'d</div>':''}
-                </div>`;
+                if (expired) html += '<div class="text-red-400 text-xs font-bold mt-1 ml-1 expiry-pulse">PEN EXPIRED ('+age+'d) \u2014 REFILL</div>';
+                else if (expiring) html += '<div class="text-yellow-400 text-xs mt-1 ml-1">Pen expires in '+(28-age)+'d</div>';
             } else if (dose) {
-                html += `<div class="bg-gray-800 rounded-lg p-2 mb-2 text-gray-600 text-xs text-center">No pen for ${peptide} \u2014 see Admin Lab</div>`;
+                html += '<div class="text-gray-600 text-xs mt-1 ml-1">No pen assigned \u2014 see Admin Lab</div>';
             }
+            html += '</div>';
         });
     } else {
-        html += '<div class="text-gray-500 text-sm text-center py-2">No shots today \u2014 recovery focus</div>';
+        html += '<div class="text-center py-4"><div class="text-2xl mb-1">&#x1F9D8;</div><div class="text-gray-500 text-sm">No shots today \u2014 recovery focus</div></div>';
     }
 
     // Protein First reminder for Karen on workout days
     if (profileIs(p,'karen') && todaySched.window === 'morning') {
-        html += '<div class="bg-blue-900/30 border border-blue-800 rounded-lg p-2 mt-1 text-xs text-blue-300">&#x1F4AA; Protein First: Hit your 90-100g floor to protect muscle tone at 5% incline.</div>';
+        html += '<div class="bg-blue-900/20 border border-blue-800/30 rounded-xl p-3 mt-2 text-xs text-blue-300 flex items-center gap-2"><span class="text-lg">&#x1F4AA;</span> <span>Protein First: Hit your 90-100g floor to protect muscle tone at 5% incline.</span></div>';
     }
     html += '</div>';
 
     // === MACRO TRACKER ===
-    html += `<div class="card"><div class="section-title">Daily Tracking</div><div class="grid grid-cols-2 gap-3">
-        <div><label class="label">Calories <span class="text-amber-500">(${p.calorie_target})</span></label>
-            <input type="number" inputmode="numeric" class="input-field" value="${log.calories||''}" placeholder="${p.calorie_target}" onchange="saveDailyField('calories',this.value)"></div>
-        <div><label class="label">Protein (g) <span class="text-amber-500">(${p.protein_min}-${p.protein_max})</span></label>
-            <input type="number" inputmode="numeric" class="input-field" value="${log.protein||''}" placeholder="${p.protein_min}" onchange="saveDailyField('protein',this.value)"></div>
-        <div><label class="label">Water (oz) <span class="text-amber-500">(${p.water_target})</span></label>
-            <input type="number" inputmode="numeric" class="input-field" value="${log.water||''}" placeholder="${p.water_target}" onchange="saveDailyField('water',this.value)"></div>
-        ${p.fiber_target ? `<div><label class="label">Fiber (g) <span class="text-amber-500">(${p.fiber_target}+)</span></label>
-            <input type="number" inputmode="numeric" class="input-field" value="${log.fiber||''}" placeholder="${p.fiber_target}" onchange="saveDailyField('fiber',this.value)"></div>` :
-        `<div><label class="label">Weight (lbs)</label>
-            <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Current" onchange="saveDailyField('weight',this.value)"></div>`}
-    </div>
-    ${p.fiber_target ? `<div class="mt-3"><label class="label">Weight (lbs)</label>
-        <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Step on the scale..." onchange="saveDailyField('weight',this.value)"></div>` : ''}
+    const calPct = log.calories ? Math.min(100, (parseFloat(log.calories) / p.calorie_target * 100)).toFixed(0) : 0;
+    const proPct = log.protein ? Math.min(100, (parseFloat(log.protein) / p.protein_min * 100)).toFixed(0) : 0;
+    const watPct = log.water ? Math.min(100, (parseFloat(log.water) / p.water_target * 100)).toFixed(0) : 0;
+    html += `<div class="card">
+        <div class="section-title">Daily Tracking</div>
+        <div class="grid grid-cols-3 gap-2 mb-3">
+            <div class="stat-mini"><div class="stat-mini-value ${calPct >= 90 ? 'text-emerald-400' : calPct > 0 ? 'text-amber-400' : 'text-gray-600'}">${log.calories || '\u2014'}</div><div class="stat-mini-label">cal / ${p.calorie_target}</div>
+                <div class="w-full bg-gray-800 rounded-full h-1 mt-1.5"><div class="bg-amber-500 h-1 rounded-full transition-all" style="width:${calPct}%"></div></div></div>
+            <div class="stat-mini"><div class="stat-mini-value ${proPct >= 90 ? 'text-emerald-400' : proPct > 0 ? 'text-amber-400' : 'text-gray-600'}">${log.protein || '\u2014'}</div><div class="stat-mini-label">pro / ${p.protein_min}g</div>
+                <div class="w-full bg-gray-800 rounded-full h-1 mt-1.5"><div class="bg-blue-500 h-1 rounded-full transition-all" style="width:${proPct}%"></div></div></div>
+            <div class="stat-mini"><div class="stat-mini-value ${watPct >= 90 ? 'text-emerald-400' : watPct > 0 ? 'text-amber-400' : 'text-gray-600'}">${log.water || '\u2014'}</div><div class="stat-mini-label">oz / ${p.water_target}</div>
+                <div class="w-full bg-gray-800 rounded-full h-1 mt-1.5"><div class="bg-cyan-500 h-1 rounded-full transition-all" style="width:${watPct}%"></div></div></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div><label class="label">Calories</label>
+                <input type="number" inputmode="numeric" class="input-field" value="${log.calories||''}" placeholder="${p.calorie_target}" onchange="saveDailyField('calories',this.value)"></div>
+            <div><label class="label">Protein (g)</label>
+                <input type="number" inputmode="numeric" class="input-field" value="${log.protein||''}" placeholder="${p.protein_min}" onchange="saveDailyField('protein',this.value)"></div>
+            <div><label class="label">Water (oz)</label>
+                <input type="number" inputmode="numeric" class="input-field" value="${log.water||''}" placeholder="${p.water_target}" onchange="saveDailyField('water',this.value)"></div>
+            ${p.fiber_target ? `<div><label class="label">Fiber (g)</label>
+                <input type="number" inputmode="numeric" class="input-field" value="${log.fiber||''}" placeholder="${p.fiber_target}" onchange="saveDailyField('fiber',this.value)"></div>` :
+            `<div><label class="label">Weight (lbs)</label>
+                <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Current" onchange="saveDailyField('weight',this.value)"></div>`}
+        </div>
+        ${p.fiber_target ? `<div class="mt-3"><label class="label">Weight (lbs)</label>
+            <input type="number" inputmode="decimal" step="0.1" class="input-field" value="${log.weight||''}" placeholder="Step on the scale..." onchange="saveDailyField('weight',this.value)"></div>` : ''}
     </div>`;
 
     // === WORKOUT ===
@@ -700,14 +766,28 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     } else { html += `<div class="text-gray-300 mb-3">${todaySched.workout}</div>`; }
 
     const done = log.workout && log.workout.completed;
-    html += `<button onclick="toggleWorkout()" class="w-full py-3 rounded-xl font-bold transition-all active:scale-[0.97] ${done?'bg-emerald-700 text-white':'bg-gray-700 hover:bg-gray-600 text-white'}">
-        ${done ? '&#x2705; Workout Complete' : '&#x25CB; Mark Workout Complete'}</button>
-        <button onclick="showScreen('workout')" class="w-full mt-2 py-2 text-sm text-gray-500 hover:text-amber-400 transition">View Full Plan &rarr;</button></div>`;
+    html += `<button onclick="toggleWorkout()" class="btn-shot ${done?'btn-shot-done check-pop':'bg-gray-800 border border-gray-700 text-gray-300'}" style="${done?'':'box-shadow:none'}" >
+        <span class="text-xl">${done ? '&#x2705;' : '&#x25CB;'}</span>
+        <span class="flex-1 text-left font-bold">${done ? 'Workout Complete' : 'Mark Workout Complete'}</span>
+    </button>
+    <button onclick="showScreen('workout')" class="w-full mt-2 py-2.5 text-sm text-gray-500 hover:text-amber-400 transition font-medium">View Full Plan &rarr;</button></div>`;
 
     // === WEIGHT CHART ===
-    html += `<div class="card"><div class="section-title">Weight Progress</div>
-        <div class="relative" style="height:200px"><canvas id="weight-chart"></canvas></div>
-        <div class="flex justify-between text-xs text-gray-500 mt-2"><span>Start: ${p.start_weight||'?'} lbs</span><span>Goal: ${p.goal_weight||'?'} lbs</span></div></div>`;
+    const totalLoss = p.start_weight && latestW ? (p.start_weight - latestW).toFixed(1) : null;
+    const remaining = p.goal_weight && latestW ? (latestW - p.goal_weight).toFixed(1) : null;
+    html += `<div class="card"><div class="section-title">Weight Progress</div>`;
+    if (totalLoss && remaining && parseFloat(remaining) > 0) {
+        const progressPct = Math.min(100, (parseFloat(totalLoss) / (p.start_weight - p.goal_weight) * 100)).toFixed(0);
+        html += `<div class="flex items-center gap-3 mb-3">
+            <div class="flex-1">
+                <div class="flex justify-between text-xs mb-1"><span class="text-gray-400">${totalLoss} lbs lost</span><span class="text-amber-400 font-bold">${remaining} lbs to go</span></div>
+                <div class="w-full bg-gray-800 rounded-full h-2"><div class="bg-gradient-to-r from-amber-500 to-amber-400 h-2 rounded-full transition-all" style="width:${progressPct}%"></div></div>
+            </div>
+            <div class="text-2xl font-extrabold text-gradient">${progressPct}%</div>
+        </div>`;
+    }
+    html += `<div class="relative" style="height:180px"><canvas id="weight-chart"></canvas></div>
+        <div class="flex justify-between text-xs text-gray-500 mt-2"><span>Start: ${p.start_weight||'?'} lbs</span>${latestW?'<span class="text-white font-bold">Current: '+latestW+' lbs</span>':''}<span>Goal: ${p.goal_weight||'?'} lbs</span></div></div>`;
 
     document.getElementById('dash-content').innerHTML = html;
     setTimeout(() => renderWeightChart(p, weightHist), 50);
