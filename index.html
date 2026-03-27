@@ -321,7 +321,8 @@ const NOGO_KAREN = [
 
 let currentSession = null;
 let currentProfile = null;
-let todayLog = null;       // cached today log for current user
+let todayLog = null;       // cached log for the date being viewed
+let viewingDate = null;    // date string being viewed (null = today)
 let cachedMasters = [];    // active master vials
 let cachedPens = [];       // active pens
 let cachedPeptideTypes = [];
@@ -334,6 +335,10 @@ let weightChart = null;
 
 function todayStr() { return new Date().toISOString().split('T')[0]; }
 function dayOfWeek() { return new Date().getDay(); }
+function activeDate() { return viewingDate || todayStr(); }
+function activeDayOfWeek() { return new Date(activeDate()+'T12:00:00').getDay(); }
+function isViewingToday() { return activeDate() === todayStr(); }
+function shiftDate(dateStr, days) { const d = new Date(dateStr+'T12:00:00'); d.setDate(d.getDate()+days); return d.toISOString().split('T')[0]; }
 function formatDate(str) { return new Date(str+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
 function formatDateLong(str) { return new Date(str+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}); }
 function formatDateShort(str) { const d=new Date(str+'T12:00:00'); return (d.getMonth()+1)+'/'+d.getDate(); }
@@ -414,11 +419,12 @@ async function updateProfileField(profileId, updates) {
 }
 
 async function ensureTodayLog() {
-    if (todayLog && todayLog.log_date === todayStr()) return todayLog;
+    const date = activeDate();
+    if (todayLog && todayLog.log_date === date) return todayLog;
     const { data, error } = await sb.from('daily_logs').select('*')
-        .eq('user_id', currentSession.user.id).eq('log_date', todayStr()).maybeSingle();
+        .eq('user_id', currentSession.user.id).eq('log_date', date).maybeSingle();
     if (error) throw error;
-    todayLog = data || { user_id: currentSession.user.id, log_date: todayStr(), calories: null, protein: null, weight: null, water: null, fiber: null, shots: {}, workout: { completed: false, notes: '' } };
+    todayLog = data || { user_id: currentSession.user.id, log_date: date, calories: null, protein: null, weight: null, water: null, fiber: null, shots: {}, workout: { completed: false, notes: '' } };
     return todayLog;
 }
 
@@ -635,6 +641,9 @@ function showScreen(name) {
     lastScreen = name;
     window.scrollTo(0, 0);
 
+    // Reset to today when leaving dashboard
+    if (name !== 'dashboard') { viewingDate = null; todayLog = null; }
+
     if (name === 'auth') renderAuthForm();
     if (name === 'dashboard') loadDashboard();
     if (name === 'lab') loadLab();
@@ -680,7 +689,7 @@ async function loadDashboard() {
 
     document.getElementById('dash-avatar').textContent = (p.display_name || '?')[0].toUpperCase();
     document.getElementById('dash-username').textContent = p.display_name;
-    document.getElementById('dash-date').textContent = formatDateLong(todayStr());
+    document.getElementById('dash-date').textContent = formatDateLong(activeDate());
     const labBtn = document.getElementById('btn-lab');
     if (isAdmin(p)) labBtn.classList.remove('hidden'); else labBtn.classList.add('hidden');
 
@@ -697,9 +706,24 @@ async function loadDashboard() {
 
 function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     const schedule = getSchedule(p);
-    const todaySched = schedule[dayOfWeek()];
+    const todaySched = schedule[activeDayOfWeek()];
     const wk = weekNum(p);
     let html = '';
+
+    // === DATE NAVIGATOR ===
+    const viewing = activeDate();
+    const isPast = !isViewingToday();
+    html += `<div class="flex items-center justify-between py-1">
+        <button onclick="navDate(-1)" class="w-10 h-10 flex items-center justify-center rounded-xl bg-gray-800 text-gray-400 text-lg transition active:scale-90">&larr;</button>
+        <div class="text-center flex-1">
+            ${isPast ? '<div class="text-xs text-amber-400 font-bold mb-0.5">VIEWING PAST DATE</div>' : ''}
+            <div class="text-sm font-bold ${isPast ? 'text-amber-300' : 'text-gray-300'}">${DAYS[activeDayOfWeek()]}, ${formatDate(viewing)}</div>
+        </div>
+        <button onclick="${isPast ? 'navDate(1)' : ''}" class="w-10 h-10 flex items-center justify-center rounded-xl ${isPast ? 'bg-gray-800 text-gray-400 active:scale-90' : 'bg-gray-800/30 text-gray-700'} text-lg transition">&rarr;</button>
+    </div>`;
+    if (isPast) html += `<button onclick="navToToday()" class="w-full py-2 rounded-xl bg-amber-600/20 border border-amber-600/30 text-amber-400 text-sm font-bold transition active:scale-[0.97]">Jump to Today</button>`;
+    html += `
+    </div>`;
 
     // === WARNINGS ===
     if (latestW !== null && latestW < 150 && rate !== null && rate > 2) {
@@ -739,7 +763,7 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     const windowTextColor = isMorning ? 'text-blue-400' : 'text-purple-400';
     html += `<div class="card card-glow card-breathe stagger">
         <div class="flex items-center justify-between mb-3">
-            <div class="section-title mb-0">${DAYS[dayOfWeek()]}'s Protocol</div>
+            <div class="section-title mb-0">${DAYS[activeDayOfWeek()]}'s Protocol</div>
             <div class="text-xs font-bold ${windowTextColor} bg-gray-800/80 px-2.5 py-1 rounded-full">${windowLabel}</div>
         </div>
         <div class="bg-gradient-to-r ${windowGradient} border ${windowBorder} rounded-xl p-3 mb-3">
@@ -759,7 +783,7 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     if (todayShots.length > 0) {
         todayShots.forEach(peptide => {
             const shotLog = log.shots || {};
-            const logged = !!shotLog[peptide] && (Date.now() - new Date(shotLog[peptide]).getTime()) < 86400000;
+            const logged = !!shotLog[peptide];
 
             // Shot button + dosing in one row
             const pen = pens.find(pe => pe.peptide === peptide);
@@ -877,6 +901,18 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
 // ║                 10. DAILY LOGGING                           ║
 // ╚══════════════════════════════════════════════════════════════╝
 
+function navDate(delta) {
+    viewingDate = shiftDate(activeDate(), delta);
+    todayLog = null; // clear cache so it reloads for new date
+    loadDashboard();
+}
+
+function navToToday() {
+    viewingDate = null;
+    todayLog = null;
+    loadDashboard();
+}
+
 async function saveDailyField(field, value) {
     try {
         await ensureTodayLog();
@@ -889,7 +925,7 @@ async function logShot(peptide) {
     try {
         await ensureTodayLog();
         if (!todayLog.shots) todayLog.shots = {};
-        if (todayLog.shots[peptide] && (Date.now() - new Date(todayLog.shots[peptide]).getTime()) < 86400000) {
+        if (todayLog.shots[peptide]) {
             if (!confirm('Shot already logged. Undo?')) return;
             delete todayLog.shots[peptide];
         } else {
