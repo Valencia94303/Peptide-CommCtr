@@ -1476,6 +1476,10 @@ function renderSettings(recentLogs, allProfiles, todayLogs) {
         html += '</div>';
     }
 
+    // Help & Guide
+    html += `<div class="card"><div class="section-title">Help</div>
+        <a href="docs/user-guide.html" target="_blank" class="btn-secondary block text-center" style="text-decoration:none">User Guide</a></div>`;
+
     // Export
     html += `<div class="card"><div class="section-title">Data Export</div>
         <p class="text-xs text-gray-500 mb-3">Download your log history as JSON.</p>

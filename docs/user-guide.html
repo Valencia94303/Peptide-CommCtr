@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>User Guide - Peptide Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { -webkit-font-smoothing: antialiased; }
+
+        /* Cards - matches app */
+        .card { background: linear-gradient(145deg, rgb(17 24 39), rgb(12 17 29)); border: 1px solid rgb(31 41 55); border-radius: 1rem; padding: 1.25rem; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .card-glow { border-color: rgba(245, 158, 11, 0.2); box-shadow: 0 2px 12px rgba(245, 158, 11, 0.08); }
+
+        /* Glass header - matches app */
+        .glass-header { background: rgba(3, 7, 18, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid rgba(245, 158, 11, 0.1); }
+
+        /* Gradient text - matches app */
+        .text-gradient { background: linear-gradient(135deg, #f59e0b, #d97706); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+        /* Dose pill - matches app */
+        .dose-pill { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 0.625rem; padding: 0.5rem 0.75rem; }
+
+        /* Section title - matches app */
+        .section-title { font-size: 0.7rem; font-weight: 700; color: rgb(107 114 128); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.875rem; }
+
+        /* Table styling */
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; font-size: 0.7rem; font-weight: 700; color: rgb(107 114 128); text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 0.625rem; border-bottom: 1px solid rgb(31 41 55); }
+        td { font-size: 0.85rem; color: rgb(209 213 219); padding: 0.5rem 0.625rem; border-bottom: 1px solid rgba(31, 41, 55, 0.5); }
+        tr:last-child td { border-bottom: none; }
+
+        /* Alert boxes */
+        .alert-danger { background: rgba(185, 28, 28, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 0.75rem; padding: 0.875rem 1rem; }
+        .alert-info { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 0.75rem; padding: 0.875rem 1rem; }
+        .alert-amber { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 0.75rem; padding: 0.875rem 1rem; }
+
+        /* Smooth scroll */
+        html { scroll-behavior: smooth; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+    <!-- Sticky Header -->
+    <header class="glass-header sticky top-0 z-50 px-4 py-3">
+        <div class="max-w-lg mx-auto flex items-center justify-between">
+            <a href="../index.html" class="text-amber-500 text-sm font-semibold hover:text-amber-400 transition-colors">&larr; Back to App</a>
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">User Guide</span>
+        </div>
+    </header>
+
+    <main class="max-w-lg mx-auto px-4 pt-6 pb-16 space-y-5">
+
+        <!-- ============================================ -->
+        <!-- HEADER                                       -->
+        <!-- ============================================ -->
+        <div class="text-center py-4">
+            <h1 class="text-2xl font-extrabold text-gradient">Peptide Command Center</h1>
+            <p class="text-gray-400 text-sm mt-1 font-medium">User Guide</p>
+        </div>
+
+        <!-- Table of Contents -->
+        <nav class="card card-glow">
+            <p class="section-title">Contents</p>
+            <ol class="space-y-1.5 text-sm text-gray-300 list-decimal list-inside">
+                <li><a href="#getting-started" class="text-amber-500 hover:text-amber-400">Getting Started</a></li>
+                <li><a href="#daily-dashboard" class="text-amber-500 hover:text-amber-400">Your Daily Dashboard</a></li>
+                <li><a href="#macros" class="text-amber-500 hover:text-amber-400">Tracking Your Macros</a></li>
+                <li><a href="#treadmill" class="text-amber-500 hover:text-amber-400">Your Treadmill Protocol</a></li>
+                <li><a href="#weekly-schedule" class="text-amber-500 hover:text-amber-400">Your Weekly Schedule</a></li>
+                <li><a href="#no-go-foods" class="text-amber-500 hover:text-amber-400">No-Go Foods</a></li>
+                <li><a href="#fasting-rules" class="text-amber-500 hover:text-amber-400">Fasting Rules</a></li>
+                <li><a href="#safety" class="text-amber-500 hover:text-amber-400">Safety</a></li>
+                <li><a href="#settings" class="text-amber-500 hover:text-amber-400">Settings</a></li>
+            </ol>
+        </nav>
+
+        <!-- ============================================ -->
+        <!-- 1. GETTING STARTED                           -->
+        <!-- ============================================ -->
+        <section id="getting-started" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">1. Getting Started</h2>
+            <div class="space-y-3 text-sm text-gray-300 leading-relaxed">
+                <p>Open the app URL in your phone's browser (Safari or Chrome both work). You can add it to your home screen for quick access.</p>
+
+                <div class="alert-info">
+                    <p class="font-semibold text-blue-400 text-xs uppercase tracking-wide mb-1">Sign In / Create Account</p>
+                    <p class="text-sm text-gray-300">If this is your first time, create an account with your email. If you already have one, sign in with the same credentials.</p>
+                </div>
+
+                <div class="alert-amber">
+                    <p class="font-semibold text-amber-400 text-xs uppercase tracking-wide mb-1">Important: Display Name</p>
+                    <p class="text-sm text-gray-300">Your display name must be set to exactly <span class="font-bold text-white">"Karen"</span>. This is how the app knows which protocol to load for you. If the name does not match, your shots and schedule will not appear correctly.</p>
+                </div>
+
+                <p>Once signed in, the app automatically loads your personal protocol -- your peptides, schedule, doses, and targets are all pre-configured.</p>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 2. YOUR DAILY DASHBOARD                      -->
+        <!-- ============================================ -->
+        <section id="daily-dashboard" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">2. Your Daily Dashboard</h2>
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Date Navigator</p>
+                    <p>At the top of the dashboard you will see today's date with left and right arrow buttons. Use these to browse previous days and review what you logged. If you have navigated to a past date, tap <span class="font-semibold text-amber-500">"Jump to Today"</span> to return to the current day.</p>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Morning vs. Evening Protocol</p>
+                    <p>Each day has exactly one injection window -- either morning or evening, never both. The dashboard shows only the shots that apply to that window:</p>
+                    <ul class="list-disc list-inside ml-2 mt-1 space-y-1 text-gray-400">
+                        <li><span class="text-gray-300 font-medium">Morning days</span> (Mon, Tue, Thu, Sat) -- fasted morning shots. Evening section is empty.</li>
+                        <li><span class="text-gray-300 font-medium">Evening days</span> (Wed, Fri, Sun) -- bedtime shots. Morning section is empty.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Logging a Shot</p>
+                    <p>When it is time for your injection, you will see an amber-colored button for each peptide due that day. Tap the button to log it -- it turns green with a checkmark to confirm. If you tapped by mistake, tap the green button again to undo the log.</p>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Dosing Pill</p>
+                    <p>Next to each shot button you will see a small pill-shaped badge showing the number of units to dial on your pen. These are pre-calculated from your pen's concentration so you do not need to do any math. Just dial the number shown and inject.</p>
+                    <div class="dose-pill text-center text-amber-500 font-bold text-sm mt-2">Example: 30 units</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 3. TRACKING YOUR MACROS                      -->
+        <!-- ============================================ -->
+        <section id="macros" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">3. Tracking Your Macros</h2>
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
+
+                <p>Below your shot cards, you will find input fields for your daily nutrition tracking. Fill these in throughout the day.</p>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+                        <p class="text-lg font-extrabold text-white">1,200</p>
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mt-0.5">Calories Min</p>
+                    </div>
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+                        <p class="text-lg font-extrabold text-white">90-100g</p>
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mt-0.5">Protein</p>
+                    </div>
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+                        <p class="text-lg font-extrabold text-white">80 oz</p>
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mt-0.5">Water</p>
+                    </div>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Progress Bars</p>
+                    <p>As you log calories, protein, and water, progress bars fill up toward your targets. This gives you a quick visual check on where you stand for the day.</p>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Weight Logging</p>
+                    <p>Log your weight every morning using the same routine:</p>
+                    <ol class="list-decimal list-inside ml-2 mt-1 space-y-1 text-gray-400">
+                        <li>Wake up</li>
+                        <li>Use the bathroom</li>
+                        <li>Step on the scale</li>
+                    </ol>
+                    <p class="mt-2 text-gray-400">Do this every day, same conditions. Consistency matters more than any single number. The app uses your weight trend to track progress and trigger safety checks.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 4. YOUR TREADMILL PROTOCOL                   -->
+        <!-- ============================================ -->
+        <section id="treadmill" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">4. Your Treadmill Protocol</h2>
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
+
+                <div class="alert-amber">
+                    <p class="font-bold text-amber-400 text-sm">8 lb Weighted Vest Required</p>
+                    <p class="text-sm text-gray-300 mt-1">Wear the vest for every session. DO NOT HOLD THE HANDRAILS. Keep your arms swinging naturally -- this engages your core and glutes.</p>
+                </div>
+
+                <p>Treadmill walking only. Four sessions per week on <span class="font-semibold text-white">Monday, Tuesday, Thursday, and Saturday</span>.</p>
+
+                <div class="overflow-x-auto -mx-1.5">
+                    <table>
+                        <thead>
+                            <tr class="text-left">
+                                <th>Phase</th>
+                                <th>Weeks</th>
+                                <th>Duration</th>
+                                <th>Incline</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="font-semibold text-amber-500">Baseline</td>
+                                <td>1-2</td>
+                                <td>20 min</td>
+                                <td>2%</td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold text-amber-500">Progression</td>
+                                <td>3-6</td>
+                                <td>30 min</td>
+                                <td>5%</td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold text-amber-500">Power Burn</td>
+                                <td>7+</td>
+                                <td>30-40 min</td>
+                                <td>6-10%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="text-gray-500 text-xs">Speed stays at 2.8-3.0 mph across all phases. Incline is the primary progression variable.</p>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 5. YOUR WEEKLY SCHEDULE                      -->
+        <!-- ============================================ -->
+        <section id="weekly-schedule" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">5. Your Weekly Schedule</h2>
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
+
+                <div class="alert-info">
+                    <p class="font-semibold text-blue-400 text-xs uppercase tracking-wide mb-1">One Shot Window Rule</p>
+                    <p class="text-sm text-gray-300">Every day has exactly one injection window -- either morning OR evening, never both. This is enforced by the app. You will never see both morning and evening shots on the same day.</p>
+                </div>
+
+                <div class="overflow-x-auto -mx-1.5">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Day</th>
+                                <th>Window</th>
+                                <th>Peptides</th>
+                                <th>Exercise</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="font-semibold text-white">Mon</td>
+                                <td class="text-amber-500">AM</td>
+                                <td>Tirz 25u + MOTS-c 30u</td>
+                                <td>Treadmill</td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold text-white">Tue</td>
+                                <td class="text-amber-500">AM</td>
+                                <td>MOTS-c 30u</td>
+                                <td>Treadmill</td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold text-white">Wed</td>
+                                <td class="text-blue-400">PM</td>
+                                <td>Diamond Glow 10u</td>
+                                <td>Rest / Core</td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold text-white">Thu</td>
+                                <td class="text-amber-500">AM</td>
+                                <td>MOTS-c 30u</td>
+                                <td>Treadmill</td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold text-white">Fri</td>
+                                <td class="text-blue-400">PM</td>
+                                <td>Diamond Glow 10u</td>
+                                <td>Rest / Core</td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold text-white">Sat</td>
+                                <td class="text-amber-500">AM</td>
+                                <td>MOTS-c 30u</td>
+                                <td>Treadmill</td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold text-white">Sun</td>
+                                <td class="text-blue-400">PM</td>
+                                <td>Diamond Glow 10u</td>
+                                <td>Rest / Core</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="text-gray-500 text-xs">Tirzepatide note: If Monday morning nausea occurs, the Tirz shot can be moved to Sunday night. Talk to your admin about adjusting the schedule.</p>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 6. NO-GO FOODS                               -->
+        <!-- ============================================ -->
+        <section id="no-go-foods" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">6. No-Go Foods</h2>
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
+
+                <div class="alert-danger">
+                    <p class="font-bold text-red-400 text-sm uppercase tracking-wide">SPINACH -- ALLERGY</p>
+                    <p class="text-sm text-gray-300 mt-1">Avoid all spinach completely. Safe substitutes: Bok Choy, Romaine, Cabbage.</p>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-2">Avoid These</p>
+                    <ul class="space-y-1.5 text-gray-400">
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-400 font-bold text-xs mt-0.5">[X]</span>
+                            <span>Fried foods (including fried tempura, crispy tacos)</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-400 font-bold text-xs mt-0.5">[X]</span>
+                            <span>Carbonated drinks</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-400 font-bold text-xs mt-0.5">[X]</span>
+                            <span>Liquid sugar (juice, soda, sweet tea)</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-400 font-bold text-xs mt-0.5">[X]</span>
+                            <span>Raw cruciferous veggies (broccoli, cauliflower, cabbage -- cook them instead)</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-2">Focus Foods</p>
+                    <div class="flex flex-wrap gap-2">
+                        <span class="dose-pill text-xs text-amber-500 font-semibold">Sashimi</span>
+                        <span class="dose-pill text-xs text-amber-500 font-semibold">Miso</span>
+                        <span class="dose-pill text-xs text-amber-500 font-semibold">Grilled Chicken (Pollo Asado)</span>
+                        <span class="dose-pill text-xs text-amber-500 font-semibold">Ceviche</span>
+                        <span class="dose-pill text-xs text-amber-500 font-semibold">White Fish</span>
+                        <span class="dose-pill text-xs text-amber-500 font-semibold">Shrimp</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 7. FASTING RULES                             -->
+        <!-- ============================================ -->
+        <section id="fasting-rules" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">7. Fasting Rules</h2>
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-2">Morning Shots (Mon, Tue, Thu, Sat)</p>
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2">
+                        <div class="flex items-start gap-2">
+                            <span class="text-amber-500 font-bold text-xs mt-0.5">1.</span>
+                            <span class="text-gray-300"><span class="font-semibold text-white">Water only</span> -- no food, no coffee with cream, nothing but plain water before your shot.</span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <span class="text-amber-500 font-bold text-xs mt-0.5">2.</span>
+                            <span class="text-gray-300"><span class="font-semibold text-white">Inject 30 minutes before activity</span> -- give the peptide time to absorb before hitting the treadmill.</span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <span class="text-amber-500 font-bold text-xs mt-0.5">3.</span>
+                            <span class="text-gray-300"><span class="font-semibold text-white">Do not eat for 1 hour after injection</span> -- let the peptide work uninterrupted.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-2">Evening Shots (Wed, Fri, Sun)</p>
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2">
+                        <div class="flex items-start gap-2">
+                            <span class="text-blue-400 font-bold text-xs mt-0.5">1.</span>
+                            <span class="text-gray-300"><span class="font-semibold text-white">2 hours after your last bite</span> -- ideally taken at bedtime after your food has settled.</span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <span class="text-blue-400 font-bold text-xs mt-0.5">2.</span>
+                            <span class="text-gray-300"><span class="font-semibold text-white">Late Meal Rule</span> -- if you ate late and the 2-hour window would keep you up, just take the shot and go to sleep. Rest is more important than perfect timing.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 8. SAFETY                                    -->
+        <!-- ============================================ -->
+        <section id="safety" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">8. Safety</h2>
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Target Weight Loss Rate</p>
+                    <p>Your healthy target is <span class="font-bold text-white">0.5 to 1.0 lb per week</span>. The app tracks your trend and will alert you if something is off.</p>
+                </div>
+
+                <div class="alert-danger">
+                    <p class="font-semibold text-red-400 text-xs uppercase tracking-wide mb-1">"Losing Too Fast" Warning</p>
+                    <p class="text-sm text-gray-300">If the app shows this warning, it means you are losing more than 2 lbs per week. The fix is simple: <span class="font-semibold text-white">add a high-protein snack</span> (like a protein shake or Greek yogurt) to bring your daily intake up by about 150 calories.</p>
+                </div>
+
+                <div class="alert-amber">
+                    <p class="font-semibold text-amber-400 text-xs uppercase tracking-wide mb-1">Protein First Rule</p>
+                    <p class="text-sm text-gray-300">Tirzepatide can reduce your appetite. On days when you do not feel like eating much, prioritize protein above everything else. A protein shake counts. The 90-100g daily floor protects your muscle, skin, and hair while you lose weight.</p>
+                </div>
+
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Why This Matters</p>
+                    <p class="text-gray-400">Losing weight too quickly without enough protein can cause muscle loss, thinning skin, and hair shedding. The safety rails in the app are there to keep your results healthy and sustainable.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- 9. SETTINGS                                  -->
+        <!-- ============================================ -->
+        <section id="settings" class="card">
+            <h2 class="text-lg font-bold text-amber-500 mb-3">9. Settings</h2>
+            <div class="space-y-3 text-sm text-gray-300 leading-relaxed">
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">View Profile</p>
+                    <p class="text-gray-400">See your display name, email, and account details.</p>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Export Data</p>
+                    <p class="text-gray-400">Download all your logged data (shots, macros, weight history) as a JSON file. Useful for sharing with your admin or keeping a personal backup.</p>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-100 mb-1">Sign Out</p>
+                    <p class="text-gray-400">Logs you out of the app. You will need your email and password to sign back in.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <div class="text-center pt-4 pb-8">
+            <p class="text-xs text-gray-600">Peptide Command Center</p>
+            <a href="../index.html" class="text-amber-500 text-sm font-semibold hover:text-amber-400 transition-colors mt-2 inline-block">&larr; Back to App</a>
+        </div>
+
+    </main>
+
+</body>
+</html>
