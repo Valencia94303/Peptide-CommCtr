@@ -338,7 +338,7 @@ let realtimeChannel = null;
 // ║                 4. UTILITIES                                ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function todayStr() { return new Date().toISOString().split('T')[0]; }
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function dayOfWeek() { return new Date().getDay(); }
 function activeDate() { return viewingDate || todayStr(); }
 function activeDayOfWeek() { return new Date(activeDate()+'T12:00:00').getDay(); }
