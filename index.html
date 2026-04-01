@@ -172,6 +172,7 @@
                 <p id="dash-date" class="text-[10px] text-gray-500 font-medium"></p>
             </div>
             <div class="flex gap-2 items-center">
+                <button onclick="showSummaryModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 text-lg transition active:scale-90" title="Activity Summary">&#x1F4CA;</button>
                 <button onclick="showNoGoModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-red-900/30 text-red-400 text-lg transition active:scale-90" title="No-Go Foods">&#x1F6AB;</button>
                 <button id="btn-lab" onclick="showScreen('lab')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-amber-900/30 text-amber-400 text-lg transition active:scale-90 hidden" title="Admin Lab">&#x2697;&#xFE0F;</button>
                 <button onclick="showScreen('settings')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-800 text-gray-400 text-lg transition active:scale-90" title="Settings">&#x2699;&#xFE0F;</button>
@@ -331,6 +332,7 @@ let cachedPens = [];       // active pens
 let cachedPeptideTypes = [];
 let cachedInventory = [];
 let weightChart = null;
+let realtimeChannel = null;
 
 // ╔══════════════════════════════════════════════════════════════╗
 // ║                 4. UTILITIES                                ║
@@ -444,6 +446,16 @@ async function upsertTodayLog() {
     todayLog = data;
 }
 
+async function fetchSummaryLogs() {
+    const { data, error } = await sb.from('daily_logs')
+        .select('log_date, shots, workout')
+        .eq('user_id', currentSession.user.id)
+        .gte('log_date', currentProfile.program_start || '2026-03-25')
+        .order('log_date', { ascending: false });
+    if (error) throw error;
+    return data || [];
+}
+
 async function fetchWeightHistory() {
     const { data, error } = await sb.from('daily_logs').select('log_date, weight')
         .eq('user_id', currentSession.user.id).not('weight', 'is', null).gt('weight', 0)
@@ -518,7 +530,8 @@ async function fetchActivePens() {
 
 async function fetchMyActivePens() {
     const { data, error } = await sb.from('pens').select('*')
-        .eq('depleted', false).eq('assigned_to', currentSession.user.id)
+        .eq('depleted', false)
+        .or(`assigned_to.eq.${currentSession.user.id},shared.eq.true`)
         .order('filled_date', { ascending: false });
     if (error) throw error;
     return data || [];
@@ -537,6 +550,21 @@ async function insertPen(masterVialId, peptide, mlFromMaster, mlFreshWater, tota
 
 async function markPenDepleted(id) {
     const { error } = await sb.from('pens').update({ depleted: true }).eq('id', id);
+    if (error) throw error;
+}
+
+async function unassignPen(id) {
+    const { error } = await sb.from('pens').update({ assigned_to: null, shared: false }).eq('id', id);
+    if (error) throw error;
+}
+
+async function reassignPen(id, newUserId) {
+    const { error } = await sb.from('pens').update({ assigned_to: newUserId, shared: false }).eq('id', id);
+    if (error) throw error;
+}
+
+async function sharePen(id) {
+    const { error } = await sb.from('pens').update({ shared: true }).eq('id', id);
     if (error) throw error;
 }
 
@@ -608,6 +636,7 @@ async function handleSignUp() {
 }
 
 async function handleLogout() {
+    if (realtimeChannel) { sb.removeChannel(realtimeChannel); realtimeChannel = null; }
     await sb.auth.signOut();
     currentSession = null; currentProfile = null; todayLog = null;
     showScreen('auth');
@@ -1108,15 +1137,25 @@ function renderLab(masters, pens, types, inv, profiles) {
     if (pens.length === 0) { html += '<div class="text-gray-600 text-sm text-center py-4">No active pens</div>'; }
     else { pens.forEach(pen => {
         const age = daysSince(pen.filled_date), expired = age > 28, expiring = age >= 25;
+        const statusText = pen.shared ? 'shared' : (pen.assigned_to ? (profiles.find(u=>u.id===pen.assigned_to)?.display_name || '') : 'unassigned');
+        const statusColor = pen.shared ? 'text-emerald-400' : (pen.assigned_to ? 'text-amber-400' : 'text-gray-600');
         html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
             <div class="flex justify-between items-start"><div>
-                <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span> <span class="text-xs ${pen.assigned_to ? 'text-amber-400' : 'text-gray-600'}">${pen.assigned_to ? (profiles.find(u=>u.id===pen.assigned_to)?.display_name || '') : 'unassigned'}</span></div>
+                <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span> <span class="text-xs ${statusColor}">${statusText}</span></div>
                 <div class="text-xs text-gray-400">${pen.mg_content}mg in ${pen.total_ml}mL &bull; <span class="text-amber-400 font-bold">${pen.concentration} mg/mL</span></div>
                 <div class="text-xs text-gray-400">${pen.ml_from_master}mL master + ${pen.ml_fresh_water}mL water</div>
                 <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'}">
                     Filled: ${formatDate(pen.filled_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
             </div>
-            <button onclick="depletePen('${pen.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div></div>`; }); }
+            <button onclick="depletePen('${pen.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div>
+            <div class="flex gap-2 mt-2 pt-2 border-t border-gray-700">
+                <select class="input-field text-xs py-1.5 flex-1" onchange="handlePenAction('${pen.id}', this.value); this.value=''">
+                    <option value="">Reassign&hellip;</option>
+                    ${profiles.map(u => `<option value="assign-${u.id}" ${pen.assigned_to === u.id && !pen.shared ? 'disabled' : ''}>${u.display_name}</option>`).join('')}
+                    <option value="share" ${pen.shared ? 'disabled' : ''}>Shared (both)</option>
+                    <option value="unassign">Unassign</option>
+                </select>
+            </div></div>`; }); }
     html += '</div>';
 
     // === USER DOSE MANAGEMENT ===
@@ -1281,6 +1320,21 @@ async function depletePen(id) {
     try { await markPenDepleted(id); await loadLab(true); } catch(e) { alert(e.message); }
 }
 
+async function handlePenAction(penId, action) {
+    if (!action) return;
+    try {
+        if (action === 'unassign') {
+            if (!confirm('Unassign this pen? Only admin will see it.')) return;
+            await unassignPen(penId);
+        } else if (action === 'share') {
+            await sharePen(penId);
+        } else if (action.startsWith('assign-')) {
+            await reassignPen(penId, action.replace('assign-', ''));
+        }
+        await loadLab(true);
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
 async function changeInventory(id, newCount) {
     try {
         await setInventoryCount(id, newCount);
@@ -1429,6 +1483,60 @@ function showNoGoModal() {
     showModal(html);
 }
 
+async function showSummaryModal() {
+    if (!currentProfile) return;
+    showModal('<div class="flex items-center justify-center py-12"><div class="spinner"></div></div>');
+    try {
+        const logs = await fetchSummaryLogs();
+        const schedule = getSchedule(currentProfile);
+        const logMap = {};
+        logs.forEach(l => { logMap[l.log_date] = l; });
+
+        const start = currentProfile.program_start || '2026-03-25';
+        const totalDays = Math.floor((new Date(todayStr()+'T12:00:00') - new Date(start+'T12:00:00')) / 86400000) + 1;
+
+        let html = `<div class="text-center mb-4">
+            <div class="text-4xl mb-2">&#x1F4CA;</div>
+            <h3 class="text-xl font-bold text-gradient">Activity Summary</h3>
+            <p class="text-gray-500 text-sm">${currentProfile.display_name} &bull; since ${formatDate(start)}</p>
+        </div><div class="space-y-1" style="max-height:60vh;overflow-y:auto;">`;
+
+        for (let i = 0; i < totalDays; i++) {
+            const dateStr = shiftDate(todayStr(), -i);
+            const log = logMap[dateStr];
+            const dow = new Date(dateStr + 'T12:00:00').getDay();
+            const isToday = (i === 0);
+
+            const shots = log?.shots || {};
+            const shotNames = Object.keys(shots);
+            const expected = schedule[dow]?.shots || [];
+            let shotsHtml;
+            if (shotNames.length > 0) {
+                shotsHtml = shotNames.map(n => `<span class="text-emerald-400">${n}</span>`).join(', ');
+            } else if (expected.length === 0) {
+                shotsHtml = '<span class="text-gray-600">no shots</span>';
+            } else {
+                shotsHtml = '<span class="text-gray-600">&mdash;</span>';
+            }
+
+            const workoutDone = log?.workout?.completed;
+            const workoutIcon = workoutDone ? '&#x2705;' : (log ? '&#x274C;' : '<span class="text-gray-700">&#x25CB;</span>');
+
+            html += `<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg ${isToday ? 'bg-amber-900/20 border border-amber-800/40' : ''}">
+                <div class="w-16 shrink-0 text-xs font-bold ${isToday ? 'text-amber-400' : 'text-gray-400'}">${DAYS_SHORT[dow]} ${formatDateShort(dateStr)}</div>
+                <div class="flex-1 min-w-0 text-xs truncate">${shotsHtml}</div>
+                <div class="w-6 text-center text-sm">${workoutIcon}</div>
+            </div>`;
+        }
+
+        html += `</div><button onclick="closeModal()" class="btn-secondary mt-6">Close</button>`;
+        showModal(html);
+    } catch (e) {
+        showModal(`<div class="text-red-400 text-center py-8">${e.message}</div>
+            <button onclick="closeModal()" class="btn-secondary mt-4">Close</button>`);
+    }
+}
+
 // ╔══════════════════════════════════════════════════════════════╗
 // ║                 15. SETTINGS                                ║
 // ╚══════════════════════════════════════════════════════════════╝
@@ -1521,7 +1629,8 @@ async function exportMyData() {
 // ╚══════════════════════════════════════════════════════════════╝
 
 function setupRealtime() {
-    sb.channel('lab-changes')
+    if (realtimeChannel) { sb.removeChannel(realtimeChannel); realtimeChannel = null; }
+    realtimeChannel = sb.channel('lab-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'master_vials' }, () => {
             const onDash = !document.getElementById('screen-dashboard').classList.contains('hidden');
             const onLab = !document.getElementById('screen-lab').classList.contains('hidden');
