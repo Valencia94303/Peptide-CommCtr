@@ -166,7 +166,18 @@
     <!-- ==================== DASHBOARD SCREEN ==================== -->
     <div id="screen-dashboard" class="hidden fade-in">
         <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
-            <div id="dash-avatar" class="w-9 h-9 bg-gradient-to-br from-amber-500 to-amber-700 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md"></div>
+            <div class="relative">
+                <div id="dash-avatar" onclick="toggleProfileMenu()" class="w-9 h-9 bg-gradient-to-br from-amber-500 to-amber-700 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md cursor-pointer transition active:scale-90"></div>
+                <div id="profile-menu" class="hidden absolute top-12 left-0 w-52 bg-gray-900 border border-gray-700/60 rounded-xl shadow-2xl z-50 overflow-hidden" style="animation:modalSlideUp 0.2s ease-out both">
+                    <div id="profile-menu-header" class="px-4 py-3 border-b border-gray-800 flex items-center gap-3">
+                        <div class="w-8 h-8 bg-gradient-to-br from-amber-500 to-amber-700 rounded-full flex items-center justify-center text-white font-bold text-xs" id="pm-avatar"></div>
+                        <div><div id="pm-name" class="text-sm font-bold text-gray-100"></div><div class="text-[10px] text-gray-500">Team Member</div></div>
+                    </div>
+                    <button onclick="openMyProtocol()" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F4D6; My Protocol Guide</button>
+                    <div class="border-t border-gray-800"></div>
+                    <button onclick="toggleProfileMenu();showScreen('settings')" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x2699;&#xFE0F; Settings</button>
+                </div>
+            </div>
             <div class="text-center flex-1 mx-3">
                 <h2 id="dash-username" class="text-base font-extrabold text-gradient"></h2>
                 <p id="dash-date" class="text-[10px] text-gray-500 font-medium"></p>
@@ -363,6 +374,28 @@ let realtimeChannel = null;
 // ╔══════════════════════════════════════════════════════════════╗
 // ║                 4. UTILITIES                                ║
 // ╚══════════════════════════════════════════════════════════════╝
+
+// Profile menu
+function toggleProfileMenu() {
+    const menu = document.getElementById('profile-menu');
+    const open = menu.classList.toggle('hidden');
+    if (!menu.classList.contains('hidden')) {
+        const name = currentProfile?.display_name || '?';
+        document.getElementById('pm-avatar').textContent = name[0].toUpperCase();
+        document.getElementById('pm-name').textContent = name;
+    }
+}
+function openMyProtocol() {
+    toggleProfileMenu();
+    const userId = (currentProfile?.display_name || '').toLowerCase();
+    window.open('onboarding.html#/' + encodeURIComponent(userId), '_blank');
+}
+document.addEventListener('click', function(e) {
+    const menu = document.getElementById('profile-menu');
+    if (menu && !menu.classList.contains('hidden') && !e.target.closest('#dash-avatar') && !e.target.closest('#profile-menu')) {
+        menu.classList.add('hidden');
+    }
+});
 
 function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function dayOfWeek() { return new Date().getDay(); }
