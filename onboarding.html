@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Onboarding | Peptide Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.3.1",
+            "react/": "https://esm.sh/react@18.3.1/",
+            "react-dom": "https://esm.sh/react-dom@18.3.1",
+            "react-dom/": "https://esm.sh/react-dom@18.3.1/",
+            "react-router-dom": "https://esm.sh/react-router-dom@6.26.0?external=react,react-dom",
+            "framer-motion": "https://esm.sh/framer-motion@11.15.0?external=react,react-dom",
+            "htm": "https://esm.sh/htm@3.1.1"
+        }
+    }
+    </script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { background: #0b0e14; color: #e5e7eb; font-family: system-ui, -apple-system, sans-serif; overscroll-behavior: none; -webkit-font-smoothing: antialiased; }
+        .text-gradient { background: linear-gradient(135deg, #f59e0b, #d97706); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .glass-header { background: rgba(11, 14, 20, 0.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid rgba(245, 158, 11, 0.1); }
+        .card { background: linear-gradient(145deg, rgb(17 24 39), rgb(12 17 29)); border: 1px solid rgb(31 41 55); border-radius: 1rem; padding: 1.25rem; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .card-glow { border-color: rgba(245, 158, 11, 0.2); box-shadow: 0 2px 12px rgba(245, 158, 11, 0.08); }
+        .btn-primary { background: linear-gradient(135deg, rgb(217 119 6), rgb(180 83 9)); color: white; font-weight: 700; border-radius: 0.875rem; transition: all 0.2s; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3); }
+        .btn-primary:hover { background: linear-gradient(135deg, rgb(245 158 11), rgb(217 119 6)); box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4); }
+        .btn-primary:active { transform: scale(0.97); }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { width: 2rem; height: 2rem; border: 2.5px solid #f59e0b; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+        .float { animation: float 3s ease-in-out infinite; }
+        .alert-row { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .bullet-row { background: rgba(17, 24, 39, 0.6); border: 1px solid rgba(31, 41, 55, 0.5); }
+        .bullet-row:hover { border-color: rgba(245, 158, 11, 0.2); background: rgba(17, 24, 39, 0.9); }
+        @supports (padding: env(safe-area-inset-bottom)) { .pb-safe { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); } }
+        /* User select cards */
+        .user-card { transition: all 0.25s; }
+        .user-card:hover { transform: translateY(-4px); border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 8px 24px rgba(245, 158, 11, 0.12); }
+    </style>
+</head>
+<body>
+    <div id="root">
+        <!-- Shown while ESM modules load -->
+        <div id="loading-screen" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh">
+            <div style="width:64px;height:64px;margin-bottom:24px;border-radius:16px;background:linear-gradient(135deg,rgba(245,158,11,0.2),rgba(217,119,6,0.1));border:1px solid rgba(245,158,11,0.2);display:flex;align-items:center;justify-content:center;font-size:32px" class="float">&#x1F9EC;</div>
+            <div class="spinner" style="margin-bottom:16px"></div>
+            <p style="color:#6b7280;font-size:14px">Loading your protocol...</p>
+        </div>
+    </div>
+    <noscript><p style="text-align:center;padding:2rem;color:#9ca3af">JavaScript is required.</p></noscript>
+
+    <script type="module">
+    import React, { useState, useEffect, useCallback } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { HashRouter, Routes, Route, useParams, useNavigate } from 'react-router-dom';
+    import { motion, AnimatePresence } from 'framer-motion';
+    import htm from 'htm';
+
+    const html = htm.bind(React.createElement);
+    const MDiv = motion.div;
+    const MH2 = motion.h2;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PROTOCOL DATA (mirrors index.html constants)
+    // ═══════════════════════════════════════════════════════════════
+
+    const PROTOCOLS = {
+        grumpy: {
+            name: 'Grumpy', fullName: 'Miguel', emoji: '\u{1F4AA}',
+            startWeight: 297, goalWeight: 200, calories: 2150,
+            proteinMin: 190, proteinMax: 210, waterOz: 120, fiberG: 30, warningLbs: 4,
+            stackLabel: 'Retatrutide + MOTS-c + Wolverine + Diamond Glow',
+            peptideSlides: [
+                {
+                    name: 'Retatrutide', nickname: 'The Triple Threat',
+                    bullets: [
+                        { icon: '\u{1F3F7}', text: 'GLP-1 / GIP / Glucagon Tri-Agonist', detail: 'The only triple-receptor weight loss peptide' },
+                        { icon: '\u{1F4A1}', text: 'Attacks fat from three metabolic pathways simultaneously' },
+                        { icon: '\u{1F3AF}', text: 'Controls appetite, stabilizes insulin, and boosts energy expenditure' },
+                        { icon: '\u{2705}', text: 'Goal: Aggressive 97lb transformation with sustained energy' },
+                        { icon: '\u{1F489}', text: 'Your dose: 1.0mg \u2014 Monday mornings (fasted)' }
+                    ]
+                },
+                {
+                    name: 'MOTS-c + Wolverine', nickname: 'The Morning Power Stack',
+                    bullets: [
+                        { icon: '\u{26A1}', text: 'MOTS-c: Mitochondrial peptide that supercharges fat oxidation' },
+                        { icon: '\u{1F6E1}', text: 'Wolverine (BPC-157): Accelerates tissue repair and reduces inflammation' },
+                        { icon: '\u{1F504}', text: 'Together they prime your body AND protect it during training' },
+                        { icon: '\u{1F4C5}', text: 'Dosed together on active days: Mon, Tue, Thu, Sat' },
+                        { icon: '\u{1F489}', text: 'MOTS-c: 0.5mg | Wolverine: 0.5mg' }
+                    ]
+                },
+                {
+                    name: 'Diamond Glow (GHK-Cu)', nickname: 'The Recovery Shield',
+                    bullets: [
+                        { icon: '\u{2728}', text: 'Natural copper peptide that rebuilds from the inside' },
+                        { icon: '\u{1F4AA}', text: 'Tightens skin as 97lbs come off \u2014 prevents loose skin' },
+                        { icon: '\u{1F319}', text: 'Works during deep REM sleep to repair connective tissue' },
+                        { icon: '\u{1F4C5}', text: 'Dosed on recovery evenings: Wed, Fri, Sun (bedtime)' },
+                        { icon: '\u{1F489}', text: 'Your dose: 1.0mg \u2014 2 hours after last meal' }
+                    ]
+                }
+            ],
+            schedule: [
+                { day: 'Mon', window: '\u{1F305} Morning', shots: 'Retatrutide + MOTS-c + Wolverine', activity: '45-min Walk' },
+                { day: 'Tue', window: '\u{1F305} Morning', shots: 'MOTS-c + Wolverine', activity: 'Calisthenics' },
+                { day: 'Wed', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Recovery Walk + Core' },
+                { day: 'Thu', window: '\u{1F305} Morning', shots: 'MOTS-c + Wolverine', activity: '45-min Walk' },
+                { day: 'Fri', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Recovery Walk + Core' },
+                { day: 'Sat', window: '\u{1F305} Morning', shots: 'MOTS-c + Wolverine', activity: 'Calisthenics' },
+                { day: 'Sun', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Recovery Walk + Core' }
+            ],
+            exerciseTitle: 'Walks + Progressive Calisthenics',
+            exerciseItems: [
+                { icon: '\u{1F6B6}', text: '45-Min Fasted Walks (Mon, Thu)', detail: 'The Big Reset \u2014 low-intensity fat oxidation' },
+                { icon: '\u{1F4AA}', text: 'Calisthenics Power (Tue, Sat)', detail: '4-week progressive: Wall push-ups \u2192 Full push-ups' },
+                { icon: '\u{1F9D8}', text: 'Recovery Walk + Core (Wed, Fri, Sun)', detail: 'Active recovery on Diamond Glow days' }
+            ],
+            allergyAlert: null,
+            noGoFoods: [
+                { icon: '\u{1F35F}', text: 'Fried Foods', detail: 'Inflammatory \u2014 counteracts peptide signaling' },
+                { icon: '\u{1F95B}', text: 'Carbonated Drinks', detail: 'Bloating interferes with GLP-1 receptors' },
+                { icon: '\u{1F36D}', text: 'Liquid Sugar', detail: 'Juice, soda, sweet tea \u2014 insulin spikes negate peptides' },
+                { icon: '\u{1F966}', text: 'Raw Cruciferous Veggies', detail: 'Broccoli, cauliflower, cabbage \u2014 cook them first' }
+            ],
+            safetyExtras: [
+                { icon: '\u{1F6E1}', text: 'Protein Floor: 190g Daily', detail: 'Your body will cannibalize muscle without it' },
+                { icon: '\u{1F4A7}', text: 'Hydration: 120oz Daily', detail: 'Peptides require adequate water transport' },
+                { icon: '\u{2696}', text: 'Weight Warning: > 4lb/week', detail: 'If losing too fast, increase calories by 200' }
+            ]
+        },
+        karen: {
+            name: 'Karen', fullName: 'Karen', emoji: '\u{1F338}',
+            startWeight: 130, goalWeight: 115, calories: 1200,
+            proteinMin: 90, proteinMax: 100, waterOz: 80, fiberG: 0, warningLbs: 2,
+            stackLabel: 'Tirzepatide + MOTS-c + Diamond Glow',
+            peptideSlides: [
+                {
+                    name: 'Tirzepatide', nickname: 'The Metabolic Anchor',
+                    bullets: [
+                        { icon: '\u{2693}', text: 'GLP-1 / GIP Co-Agonist', detail: 'Dual-action receptor agonist' },
+                        { icon: '\u{1F4A1}', text: 'Stabilizes blood sugar and eliminates "food noise" (cravings)' },
+                        { icon: '\u{1F3AF}', text: 'Hit 115lb without feeling deprived' },
+                        { icon: '\u{1F4C5}', text: 'Dosed Monday mornings (fasted) \u2014 stays active all week' },
+                        { icon: '\u{1F489}', text: 'Your dose: 1.25mg (25 units)' }
+                    ]
+                },
+                {
+                    name: 'MOTS-c', nickname: 'The Exercise Powerhouse',
+                    bullets: [
+                        { icon: '\u{26A1}', text: 'Mitochondrial-derived peptide that supercharges your cells' },
+                        { icon: '\u{1F525}', text: 'Pulsed on treadmill days to amplify your weighted vest training' },
+                        { icon: '\u{1F3C3}', text: 'Every step on that incline burns more with MOTS-c active' },
+                        { icon: '\u{1F4C5}', text: 'Dosed on active mornings: Mon, Tue, Thu, Sat' },
+                        { icon: '\u{1F489}', text: 'Your dose: 0.5mg (30 units)' }
+                    ]
+                },
+                {
+                    name: 'Diamond Glow (GHK-Cu)', nickname: 'The Recovery Shield',
+                    bullets: [
+                        { icon: '\u{2728}', text: 'Natural copper peptide that tightens skin and repairs tissue' },
+                        { icon: '\u{1F9BA}', text: 'The 8lb vest puts extra stress on joints \u2014 this repairs it overnight' },
+                        { icon: '\u{1F319}', text: 'Works during deep REM sleep for maximum recovery' },
+                        { icon: '\u{1F4C5}', text: 'Dosed on recovery evenings: Wed, Fri, Sun (bedtime)' },
+                        { icon: '\u{1F489}', text: 'Your dose: 0.5mg (10 units)' }
+                    ]
+                }
+            ],
+            schedule: [
+                { day: 'Mon', window: '\u{1F305} Morning', shots: 'Tirzepatide + MOTS-c', activity: 'Treadmill + Vest' },
+                { day: 'Tue', window: '\u{1F305} Morning', shots: 'MOTS-c', activity: 'Treadmill + Vest' },
+                { day: 'Wed', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Rest / Core' },
+                { day: 'Thu', window: '\u{1F305} Morning', shots: 'MOTS-c', activity: 'Treadmill + Vest' },
+                { day: 'Fri', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Rest / Core' },
+                { day: 'Sat', window: '\u{1F305} Morning', shots: 'MOTS-c', activity: 'Treadmill + Vest' },
+                { day: 'Sun', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Rest' }
+            ],
+            exerciseTitle: 'Treadmill + 8lb Weighted Vest',
+            exerciseItems: [
+                { icon: '\u{1F3C3}', text: 'Wk 1\u20132: Baseline', detail: '20 min, 2% incline, 2.8\u20133.0 mph, 3x/week' },
+                { icon: '\u{1F4C8}', text: 'Wk 3\u20136: Progression', detail: '30 min, 5% incline, 3.0 mph, 4x/week' },
+                { icon: '\u{1F525}', text: 'Wk 7\u201312: Power Burn', detail: '30\u201340 min, 6\u201310% incline, 3.0 mph, 5x/week' },
+                { icon: '\u{1F9BA}', text: '8lb Vest Required', detail: 'Worn during ALL treadmill sessions' }
+            ],
+            allergyAlert: { icon: '\u{1F6A8}', text: 'SPINACH \u2014 MEDICAL ALLERGY', detail: 'Substitute with Bok Choy, Romaine, or Cabbage' },
+            noGoFoods: [
+                { icon: '\u{1F35F}', text: 'Fried Foods (incl. tempura, crispy tacos)' },
+                { icon: '\u{1F95B}', text: 'Carbonated Drinks' },
+                { icon: '\u{1F36D}', text: 'Liquid Sugar (juice, soda, sweet tea)' },
+                { icon: '\u{1F966}', text: 'Raw Cruciferous Veggies' }
+            ],
+            safetyExtras: [
+                { icon: '\u{1F6E1}', text: 'Protein First on Workout Days', detail: 'Eat protein within 30 min of training' },
+                { icon: '\u{2696}', text: 'Weight Warning: > 2lb/week', detail: 'If losing too fast, increase calories by 200' },
+                { icon: '\u{1F6AB}', text: 'No Handrails on Treadmill', detail: 'Forces core engagement with the vest' }
+            ]
+        },
+        daisy: {
+            name: 'Daisy', fullName: 'Daisy', emoji: '\u{1F33C}',
+            startWeight: 170, goalWeight: 150, calories: 1400,
+            proteinMin: 130, proteinMax: 150, waterOz: 100, fiberG: 25, warningLbs: 2.5,
+            stackLabel: 'Tirzepatide + MOTS-c + Diamond Glow',
+            peptideSlides: [
+                {
+                    name: 'Tirzepatide', nickname: 'The Metabolic Anchor',
+                    bullets: [
+                        { icon: '\u{2693}', text: 'GLP-1 / GIP Co-Agonist', detail: 'Dual-action receptor agonist' },
+                        { icon: '\u{1F4A1}', text: 'Stabilizes blood sugar and turns off the "food noise"' },
+                        { icon: '\u{1F3AF}', text: 'Hit 150lb without feeling starved, even with 5.4 miles of daily walking' },
+                        { icon: '\u{1F4C5}', text: 'Dosed Monday mornings (fasted) \u2014 stays active all week' },
+                        { icon: '\u{1F489}', text: 'Your dose: 1.25mg (25 units)' }
+                    ]
+                },
+                {
+                    name: 'MOTS-c', nickname: 'The Exercise Powerhouse',
+                    bullets: [
+                        { icon: '\u{26A1}', text: 'Mitochondrial-derived peptide \u2014 supercharges your cells\u2019 batteries' },
+                        { icon: '\u{1F525}', text: 'Pulsed 4x/week on your most active days' },
+                        { icon: '\u{1F3C3}', text: 'With 5.4 miles daily, MOTS-c ensures your mitochondria fire at 100%' },
+                        { icon: '\u{1F4C5}', text: 'Active mornings: Mon, Tue, Thu, Sat' },
+                        { icon: '\u{1F489}', text: 'Your dose: 0.5mg (30 units)' }
+                    ]
+                },
+                {
+                    name: 'Diamond Glow (GHK-Cu)', nickname: 'The Recovery Shield',
+                    bullets: [
+                        { icon: '\u{2728}', text: 'Natural copper peptide that rebuilds from the inside' },
+                        { icon: '\u{1F9BA}', text: 'The 10lb vest stresses skin and connective tissue \u2014 this repairs it' },
+                        { icon: '\u{1F319}', text: 'Tightens skin as weight comes off + repairs scaffolding during sleep' },
+                        { icon: '\u{1F4C5}', text: 'Recovery evenings: Wed, Fri, Sun (bedtime, 2hr post-meal)' },
+                        { icon: '\u{1F489}', text: 'Your dose: 0.5mg (10 units)' }
+                    ]
+                }
+            ],
+            schedule: [
+                { day: 'Mon', window: '\u{1F305} Morning', shots: 'Tirzepatide + MOTS-c', activity: 'Walking + Vest' },
+                { day: 'Tue', window: '\u{1F305} Morning', shots: 'MOTS-c', activity: 'Walking + Vest' },
+                { day: 'Wed', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Walking + Vest' },
+                { day: 'Thu', window: '\u{1F305} Morning', shots: 'MOTS-c', activity: 'Walking + Vest' },
+                { day: 'Fri', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Walking + Vest' },
+                { day: 'Sat', window: '\u{1F305} Morning', shots: 'MOTS-c', activity: 'Active Recovery' },
+                { day: 'Sun', window: '\u{1F319} Evening', shots: 'Diamond Glow', activity: 'Active Recovery' }
+            ],
+            exerciseTitle: '5.4-Mile Daily Walking + 10lb Vest',
+            exerciseItems: [
+                { icon: '\u{1F305}', text: '6:30 AM \u2014 2.0 Mile Walk (Fasted)', detail: 'The big morning burn' },
+                { icon: '\u{2600}', text: '10:30 AM \u2014 0.8 Mile Break Walk', detail: 'Mid-morning movement' },
+                { icon: '\u{1F324}', text: '3:30 PM \u2014 0.8 Mile Break Walk', detail: 'Afternoon reset' },
+                { icon: '\u{1F307}', text: '7:00 PM \u2014 1.8 Mile Evening Walk', detail: 'The long session' },
+                { icon: '\u{1F9BA}', text: '8:00 PM \u2014 10lb Vest Bodyweight Training', detail: 'Strength and tone' }
+            ],
+            allergyAlert: { icon: '\u{1F6A8}', text: 'PINEAPPLE \u2014 MEDICAL ALLERGY', detail: 'Strictly forbidden. Dashboard has a hard-lock on this.' },
+            noGoFoods: [
+                { icon: '\u{1F35F}', text: 'Fried Foods (incl. tempura, crispy tacos)' },
+                { icon: '\u{1F95B}', text: 'Carbonated Drinks' },
+                { icon: '\u{1F36D}', text: 'Liquid Sugar (juice, soda, sweet tea)' },
+                { icon: '\u{1F966}', text: 'Raw Cruciferous Veggies' }
+            ],
+            safetyExtras: [
+                { icon: '\u{1F6E1}', text: 'Protein Floor: 130g Daily', detail: '5.4 miles + vest = muscle preservation is critical' },
+                { icon: '\u{1F4A7}', text: 'Hydration: 100oz Daily', detail: 'Essential for your activity level' },
+                { icon: '\u{1F33F}', text: 'Fiber: 25g Daily', detail: 'Supports digestion on reduced calories' },
+                { icon: '\u{2696}', text: 'Weight Warning: > 2.5lb/week', detail: 'If losing too fast, increase calories by 200' },
+                { icon: '\u{1F6AB}', text: 'No Handrails', detail: 'Core stabilization with the vest is key' }
+            ]
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  SLIDE GENERATOR  (always produces exactly 10 slides)
+    // ═══════════════════════════════════════════════════════════════
+
+    function generateSlides(p) {
+        const diff = p.startWeight - p.goalWeight;
+        return [
+            // 1 ── Welcome
+            {
+                label: 'Introduction',
+                bigIdea: 'Welcome, ' + p.name,
+                subtitle: 'Your personalized peptide protocol',
+                bullets: [
+                    { icon: '\u{1F3AF}', text: p.startWeight + 'lb \u2192 ' + p.goalWeight + 'lb', detail: diff + 'lbs of targeted body recomposition' },
+                    { icon: '\u{1F9EC}', text: 'Your stack: ' + p.stackLabel },
+                    { icon: '\u{1F4CB}', text: 'This guide covers your peptides, schedule, nutrition, and safety rules' }
+                ]
+            },
+            // 2 ── Philosophy
+            {
+                label: 'The Philosophy',
+                bigIdea: 'Recomposition, Not Just Weight Loss',
+                subtitle: 'We protect muscle while burning fat',
+                bullets: [
+                    { icon: '\u{1F9E0}', text: 'Most diets burn muscle AND fat \u2014 we target fat only' },
+                    { icon: '\u{1F48A}', text: 'Peptides are precision signaling tools, not shortcuts' },
+                    { icon: '\u{1F504}', text: 'Nutrition + Exercise + Peptides = results diet alone can\u2019t achieve' },
+                    { icon: '\u{1F4CA}', text: 'Every number in your protocol has a medical rationale' }
+                ]
+            },
+            // 3 ── Targets
+            {
+                label: 'Your Numbers',
+                bigIdea: 'Daily Targets',
+                subtitle: 'Hit these numbers every single day',
+                bullets: [
+                    { icon: '\u{1F525}', text: 'Calories: ' + p.calories + ' kcal', detail: 'Calculated for your specific deficit' },
+                    { icon: '\u{1F969}', text: 'Protein: ' + p.proteinMin + '\u2013' + p.proteinMax + 'g', detail: 'Your muscle\u2019s insurance policy' },
+                    { icon: '\u{1F4A7}', text: 'Water: ' + p.waterOz + 'oz', detail: 'Peptides need water to transport' },
+                    ...(p.fiberG ? [{ icon: '\u{1F33F}', text: 'Fiber: ' + p.fiberG + 'g', detail: 'Digestive support on reduced calories' }] : []),
+                    { icon: '\u{26A0}', text: 'Slow down if losing > ' + p.warningLbs + 'lb/week', detail: 'Increase intake by 200 kcal' }
+                ]
+            },
+            // 4 ── Peptide 1
+            {
+                label: 'Peptide 1 of 3',
+                bigIdea: p.peptideSlides[0].name,
+                subtitle: p.peptideSlides[0].nickname,
+                bullets: p.peptideSlides[0].bullets
+            },
+            // 5 ── Peptide 2
+            {
+                label: 'Peptide 2 of 3',
+                bigIdea: p.peptideSlides[1].name,
+                subtitle: p.peptideSlides[1].nickname,
+                bullets: p.peptideSlides[1].bullets
+            },
+            // 6 ── Peptide 3
+            {
+                label: 'Peptide 3 of 3',
+                bigIdea: p.peptideSlides[2].name,
+                subtitle: p.peptideSlides[2].nickname,
+                bullets: p.peptideSlides[2].bullets
+            },
+            // 7 ── Schedule
+            {
+                label: 'Your Schedule',
+                bigIdea: 'One Window Per Day',
+                subtitle: 'Morning = fasted. Evening = 2hr post-meal.',
+                bullets: p.schedule.map(function (s) {
+                    const isMorning = s.window.includes('Morning');
+                    return { icon: isMorning ? '\u{1F305}' : '\u{1F319}', text: s.day + ': ' + s.shots, detail: s.window.replace(/\u{1F305} |\u{1F319} /gu, '') + ' \u2014 ' + s.activity };
+                })
+            },
+            // 8 ── Exercise
+            {
+                label: 'Exercise Protocol',
+                bigIdea: 'Movement Is Medicine',
+                subtitle: p.exerciseTitle,
+                bullets: p.exerciseItems
+            },
+            // 9 ── Safety
+            {
+                label: 'Safety Rules',
+                bigIdea: 'Non-Negotiable Rules',
+                subtitle: 'These keep you safe and on track',
+                bullets: [
+                    ...(p.allergyAlert ? [Object.assign({}, p.allergyAlert, { alert: true })] : []),
+                    ...p.noGoFoods,
+                    ...p.safetyExtras
+                ]
+            },
+            // 10 ── Dashboard
+            {
+                label: 'Getting Started',
+                bigIdea: 'Your Command Center Awaits',
+                subtitle: 'Everything you need is on the dashboard',
+                bullets: [
+                    { icon: '\u{1F489}', text: 'Log every shot from the dashboard', detail: 'One tap to record \u2014 updates shared inventory automatically' },
+                    { icon: '\u{1F4CA}', text: 'Track your macros daily', detail: 'Calories, protein, water \u2014 all at a glance' },
+                    { icon: '\u{1F4C5}', text: 'Check the protocol card each morning', detail: 'It tells you exactly what\u2019s due today' },
+                    { icon: '\u{1F3C6}', text: 'Complete your workout for the celebration', detail: 'Fireworks when you crush it' },
+                    { icon: '\u{1F680}', text: 'Let\u2019s hit ' + p.goalWeight + 'lb \u2014 you\u2019ve got this!' }
+                ]
+            }
+        ];
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PPTX EXPORT
+    // ═══════════════════════════════════════════════════════════════
+
+    function exportToPPTX(slides, userName) {
+        const pptx = new PptxGenJS();
+        pptx.layout = 'LAYOUT_WIDE';
+        pptx.author = 'Peptide Command Center';
+        pptx.subject = userName + ' Onboarding Protocol';
+
+        slides.forEach(function (slide, idx) {
+            const s = pptx.addSlide();
+            s.background = { fill: '0b0e14' };
+
+            // Slide label (top-left)
+            s.addText(slide.label.toUpperCase(), {
+                x: 0.6, y: 0.35, w: 4, h: 0.3,
+                color: '4a5568', fontSize: 9, fontFace: 'Arial', bold: true, letterSpacing: 3
+            });
+
+            // Big Idea title
+            s.addText(slide.bigIdea, {
+                x: 0.6, y: 0.8, w: 12, h: 0.8,
+                color: '00d4ff', fontSize: 32, fontFace: 'Arial', bold: true
+            });
+
+            // Subtitle
+            if (slide.subtitle) {
+                s.addText(slide.subtitle, {
+                    x: 0.6, y: 1.6, w: 12, h: 0.5,
+                    color: '7dd3fc', fontSize: 16, fontFace: 'Arial'
+                });
+            }
+
+            // Bullets
+            var bulletRows = slide.bullets.map(function (b) {
+                var line = b.icon + '  ' + b.text;
+                if (b.detail) line += ' \u2014 ' + b.detail;
+                return { text: line, options: { fontSize: 14, color: 'FFFFFF', fontFace: 'Arial', breakLine: true, paraSpaceAfter: 8 } };
+            });
+
+            s.addText(bulletRows, {
+                x: 0.6, y: 2.3, w: 12, h: 4.5,
+                valign: 'top'
+            });
+
+            // Slide number (bottom-right)
+            s.addText((idx + 1) + ' / ' + slides.length, {
+                x: 10.5, y: 7.0, w: 2.5, h: 0.3,
+                color: '4a5568', fontSize: 9, fontFace: 'Arial', align: 'right'
+            });
+        });
+
+        pptx.writeFile({ fileName: userName + ' - Onboarding Protocol.pptx' });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  FRAMER-MOTION VARIANTS
+    // ═══════════════════════════════════════════════════════════════
+
+    const slideVariants = {
+        enter: function (dir) { return { x: dir > 0 ? 280 : -280, opacity: 0 }; },
+        center: { x: 0, opacity: 1 },
+        exit: function (dir) { return { x: dir > 0 ? -280 : 280, opacity: 0 }; }
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ONBOARDING PRESENTATION COMPONENT
+    // ═══════════════════════════════════════════════════════════════
+
+    function OnboardingApp() {
+        const params = useParams();
+        const navigate = useNavigate();
+        const userId = (params.userId || '').toLowerCase();
+
+        const protocol = PROTOCOLS[userId];
+        const [current, setCurrent] = useState(0);
+        const [direction, setDirection] = useState(1);
+
+        // Keyboard nav
+        useEffect(function () {
+            function onKey(e) {
+                if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goNext(); }
+                if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
+            }
+            window.addEventListener('keydown', onKey);
+            return function () { window.removeEventListener('keydown', onKey); };
+        });
+
+        // Touch swipe
+        const [touchStart, setTouchStart] = useState(null);
+        function onTouchStart(e) { setTouchStart(e.touches[0].clientX); }
+        function onTouchEnd(e) {
+            if (touchStart === null) return;
+            const diff = touchStart - e.changedTouches[0].clientX;
+            if (Math.abs(diff) > 60) { diff > 0 ? goNext() : goPrev(); }
+            setTouchStart(null);
+        }
+
+        if (!protocol) {
+            return html`<div className="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center p-6 text-center">
+                <div className="text-5xl mb-4">\u{26A0}</div>
+                <h1 className="text-2xl font-bold text-gradient mb-2">User Not Found</h1>
+                <p className="text-gray-400 mb-6">No protocol found for "<span className="text-amber-400">${params.userId}</span>"</p>
+                <button onClick=${function () { navigate('/'); }} className="btn-primary px-8 py-3">Choose a User</button>
+            </div>`;
+        }
+
+        const slides = generateSlides(protocol);
+        const slide = slides[current];
+
+        function goTo(idx) {
+            if (idx < 0 || idx >= slides.length || idx === current) return;
+            setDirection(idx > current ? 1 : -1);
+            setCurrent(idx);
+        }
+        function goNext() { goTo(current + 1); }
+        function goPrev() { goTo(current - 1); }
+
+        const progressPct = ((current + 1) / slides.length) * 100;
+
+        return html`<div className="max-w-3xl mx-auto min-h-screen flex flex-col"
+            onTouchStart=${onTouchStart} onTouchEnd=${onTouchEnd}>
+
+            <!-- Progress bar -->
+            <div className="h-1 bg-gray-900 shrink-0">
+                <div className="h-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all duration-500 ease-out"
+                    style=${{ width: progressPct + '%' }}></div>
+            </div>
+
+            <!-- Header -->
+            <div className="glass-header px-4 py-3 flex items-center justify-between shrink-0">
+                <a href="index.html" className="text-gray-500 hover:text-gray-300 text-sm font-medium transition">\u2190 App</a>
+                <div className="text-center">
+                    <span className="text-xs font-bold text-gradient">${protocol.emoji} ${protocol.name}'s Onboarding</span>
+                    <span className="block text-[10px] text-gray-600 font-mono">${current + 1} / ${slides.length}</span>
+                </div>
+                <button onClick=${function () { exportToPPTX(slides, protocol.name); }}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 hover:border-amber-500/40 hover:text-amber-400 transition"
+                    title="Download PowerPoint">
+                    \u{2B07} .pptx
+                </button>
+            </div>
+
+            <!-- Slide Content -->
+            <div className="flex-1 flex items-center justify-center px-5 py-6 overflow-hidden" style=${{ minHeight: '0' }}>
+                <${AnimatePresence} mode="wait" custom=${direction}>
+                    <${MDiv}
+                        key=${current}
+                        custom=${direction}
+                        variants=${slideVariants}
+                        initial="enter"
+                        animate="center"
+                        exit="exit"
+                        transition=${{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+                        className="w-full"
+                    >
+                        <!-- Label -->
+                        <${MDiv}
+                            initial=${{ opacity: 0, y: -10 }}
+                            animate=${{ opacity: 1, y: 0 }}
+                            transition=${{ delay: 0.1 }}
+                            className="text-[10px] uppercase tracking-[0.2em] text-amber-500/60 font-bold mb-2"
+                        >
+                            ${slide.label}
+                        </${MDiv}>
+
+                        <!-- Big Idea (Scale-up) -->
+                        <${MDiv}
+                            initial=${{ opacity: 0, scale: 0.82 }}
+                            animate=${{ opacity: 1, scale: 1 }}
+                            transition=${{ delay: 0.12, duration: 0.5, type: 'spring', stiffness: 180, damping: 18 }}
+                            className="mb-1"
+                        >
+                            <h1 className="text-3xl md:text-4xl font-extrabold text-gradient leading-tight">
+                                ${slide.bigIdea}
+                            </h1>
+                        </${MDiv}>
+
+                        <!-- Subtitle -->
+                        ${slide.subtitle && html`
+                            <${MDiv}
+                                initial=${{ opacity: 0 }}
+                                animate=${{ opacity: 1 }}
+                                transition=${{ delay: 0.25 }}
+                                className="text-gray-400 text-sm md:text-base mb-5"
+                            >
+                                ${slide.subtitle}
+                            </${MDiv}>
+                        `}
+
+                        <!-- Bullets (Slide-in) -->
+                        <div className="space-y-2.5 mt-4">
+                            ${slide.bullets.map(function (bullet, i) {
+                                const isAlert = bullet.alert;
+                                return html`
+                                    <${MDiv}
+                                        key=${i}
+                                        initial=${{ opacity: 0, x: -30 }}
+                                        animate=${{ opacity: 1, x: 0 }}
+                                        transition=${{ delay: 0.28 + i * 0.07, duration: 0.35, ease: 'easeOut' }}
+                                        className=${'flex items-start gap-3 p-3 rounded-xl transition ' + (isAlert ? 'alert-row' : 'bullet-row')}
+                                    >
+                                        <span className="text-base mt-0.5 shrink-0">${bullet.icon || '\u{25CF}'}</span>
+                                        <div className="min-w-0">
+                                            <span className=${'font-medium ' + (isAlert ? 'text-red-300' : 'text-gray-100')}>${bullet.text}</span>
+                                            ${bullet.detail && html`
+                                                <span className="block text-gray-500 text-xs mt-0.5">${bullet.detail}</span>
+                                            `}
+                                        </div>
+                                    </${MDiv}>
+                                `;
+                            })}
+                        </div>
+                    </${MDiv}>
+                </${AnimatePresence}>
+            </div>
+
+            <!-- Navigation -->
+            <div className="px-4 py-3 border-t border-gray-800/60 shrink-0 pb-safe">
+                <div className="flex items-center justify-between gap-3">
+                    <button
+                        onClick=${goPrev}
+                        disabled=${current === 0}
+                        className=${'px-5 py-2.5 rounded-xl font-semibold text-sm transition ' + (current === 0 ? 'bg-gray-800/40 text-gray-700 cursor-not-allowed' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 active:scale-95')}
+                    >
+                        \u2190 Prev
+                    </button>
+
+                    <div className="flex gap-1.5 flex-wrap justify-center">
+                        ${slides.map(function (_, i) {
+                            const active = i === current;
+                            return html`<button key=${i} onClick=${function () { goTo(i); }}
+                                className=${'h-2 rounded-full transition-all duration-300 ' + (active ? 'w-6 bg-amber-500' : 'w-2 bg-gray-700 hover:bg-gray-600')}
+                            ></button>`;
+                        })}
+                    </div>
+
+                    <button
+                        onClick=${goNext}
+                        disabled=${current === slides.length - 1}
+                        className=${'px-5 py-2.5 rounded-xl font-semibold text-sm transition ' + (current === slides.length - 1 ? 'bg-gray-800/40 text-gray-700 cursor-not-allowed' : 'btn-primary active:scale-95')}
+                    >
+                        Next \u2192
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  USER SELECT SCREEN (shown at #/)
+    // ═══════════════════════════════════════════════════════════════
+
+    function UserSelect() {
+        const navigate = useNavigate();
+        const users = [
+            { id: 'grumpy', name: 'Grumpy (Miguel)', emoji: '\u{1F4AA}', desc: '297 \u2192 200lb \u2022 Retatrutide + MOTS-c + Wolverine + DG', color: 'from-amber-500 to-orange-600' },
+            { id: 'karen', name: 'Karen', emoji: '\u{1F338}', desc: '130 \u2192 115lb \u2022 Tirzepatide + MOTS-c + DG', color: 'from-pink-500 to-rose-600' },
+            { id: 'daisy', name: 'Daisy', emoji: '\u{1F33C}', desc: '170 \u2192 150lb \u2022 Tirzepatide + MOTS-c + DG', color: 'from-yellow-400 to-amber-500' }
+        ];
+
+        return html`<div className="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center p-6">
+            <div className="text-center mb-10">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/20 flex items-center justify-center text-3xl float">\u{1F9EC}</div>
+                <h1 className="text-2xl font-extrabold text-gradient">Peptide Onboarding</h1>
+                <p className="text-gray-500 mt-1 text-sm">Select a team member</p>
+            </div>
+            <div className="w-full space-y-3">
+                ${users.map(function (u) {
+                    return html`<button key=${u.id}
+                        onClick=${function () { navigate('/' + u.id); }}
+                        className="user-card card card-glow w-full flex items-center gap-4 text-left"
+                    >
+                        <div className=${'w-12 h-12 rounded-xl bg-gradient-to-br ' + u.color + ' flex items-center justify-center text-2xl shrink-0 shadow-lg'}>
+                            ${u.emoji}
+                        </div>
+                        <div className="min-w-0">
+                            <div className="font-bold text-gray-100">${u.name}</div>
+                            <div className="text-xs text-gray-500 truncate">${u.desc}</div>
+                        </div>
+                        <span className="ml-auto text-gray-600 text-lg">\u203A</span>
+                    </button>`;
+                })}
+            </div>
+            <a href="index.html" className="mt-8 text-xs text-gray-600 hover:text-gray-400 transition">\u2190 Back to Command Center</a>
+        </div>`;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  APP ROUTER
+    // ═══════════════════════════════════════════════════════════════
+
+    function App() {
+        return html`<${HashRouter}>
+            <${Routes}>
+                <${Route} path="/" element=${html`<${UserSelect} />`} />
+                <${Route} path="/:userId" element=${html`<${OnboardingApp} />`} />
+            </${Routes}>
+        </${HashRouter}>`;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  MOUNT
+    // ═══════════════════════════════════════════════════════════════
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(html`<${App} />`);
+
+    </script>
+</body>
+</html>
