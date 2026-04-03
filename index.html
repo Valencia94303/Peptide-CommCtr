@@ -265,6 +265,16 @@ const KAREN_SCHEDULE = {
     6: { window: 'morning', shots: ['MOTS-c'], workout: 'Treadmill + 8lb Vest', type: 'treadmill', fasting: 'Fasted (water only) \u2022 30min before activity' }
 };
 
+const DAISY_SCHEDULE = {
+    0: { window: 'evening', shots: ['Diamond Glow'], workout: 'Active Recovery', type: 'rest', fasting: 'Bedtime \u2022 2hr post-meal' },
+    1: { window: 'morning', shots: ['Tirzepatide','MOTS-c'], workout: 'Walking + Vest Training', type: 'walking', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    2: { window: 'morning', shots: ['MOTS-c'], workout: 'Walking + Vest Training', type: 'walking', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    3: { window: 'evening', shots: ['Diamond Glow'], workout: 'Walking + Vest Training', type: 'walking', fasting: 'Bedtime \u2022 2hr post-meal' },
+    4: { window: 'morning', shots: ['MOTS-c'], workout: 'Walking + Vest Training', type: 'walking', fasting: 'Fasted (water only) \u2022 30min before activity' },
+    5: { window: 'evening', shots: ['Diamond Glow'], workout: 'Walking + Vest Training', type: 'walking', fasting: 'Bedtime \u2022 2hr post-meal' },
+    6: { window: 'morning', shots: ['MOTS-c'], workout: 'Active Recovery', type: 'rest', fasting: 'Fasted (water only) \u2022 30min before activity' }
+};
+
 const GENERIC_SCHEDULE = {
     0: { window: 'evening', shots: [], workout: 'Rest', type: 'rest', fasting: '' },
     1: { window: 'morning', shots: ['Primary'], workout: 'Exercise', type: 'training', fasting: 'Fasted' },
@@ -319,6 +329,22 @@ const NOGO_KAREN = [
     { icon: '&#x1F966;', text: 'Raw Cruciferous Veggies' }
 ];
 
+const NOGO_DAISY = [
+    { icon: '&#x26A0;&#xFE0F;', text: 'PINEAPPLE \u2014 ALLERGY', alert: true },
+    { icon: '&#x1F35F;', text: 'Fried Foods (incl. tempura, crispy tacos)' },
+    { icon: '&#x1F95B;', text: 'Carbonated Drinks' },
+    { icon: '&#x1F36D;', text: 'Liquid Sugar (juice, soda, sweet tea)' },
+    { icon: '&#x1F966;', text: 'Raw Cruciferous Veggies' }
+];
+
+const DAISY_ROUTINE = [
+    { key: '6:30 AM Walk', time: '06:30 AM', activity: '2.0 Mile Walk (Fasted)' },
+    { key: '10:30 AM Walk', time: '10:30 AM', activity: '0.8 Mile Break Walk' },
+    { key: '3:30 PM Walk', time: '03:30 PM', activity: '0.8 Mile Break Walk' },
+    { key: '7:00 PM Walk', time: '07:00 PM', activity: '1.8 Mile Evening Walk' },
+    { key: '8:00 PM Vest', time: '08:00 PM', activity: '10lb Vest Bodyweight Training' }
+];
+
 // ╔══════════════════════════════════════════════════════════════╗
 // ║                 3. STATE                                    ║
 // ╚══════════════════════════════════════════════════════════════╝
@@ -360,6 +386,7 @@ function getSchedule(profile) {
     const n = (profile?.display_name || '').toLowerCase();
     if (n === 'grumpy' || n === 'miguel') return GRUMPY_SCHEDULE;
     if (n === 'karen') return KAREN_SCHEDULE;
+    if (n === 'daisy') return DAISY_SCHEDULE;
     return GENERIC_SCHEDULE;
 }
 
@@ -384,6 +411,12 @@ function getProfileDefaults(displayName) {
         start_weight: 130, goal_weight: 115, calorie_target: 1200, protein_min: 90, protein_max: 100,
         fiber_target: 0, water_target: 80, peptide_type: 'Tirzepatide + MOTS-c + Diamond Glow',
         no_go_foods: NOGO_KAREN, warning_threshold: 2, program_start: '2026-03-25',
+        current_doses: { 'Tirzepatide': 1.25, 'MOTS-c': 0.5, 'Diamond Glow': 0.5 }
+    };
+    if (n === 'daisy') return {
+        start_weight: 170, goal_weight: 150, calorie_target: 1400, protein_min: 130, protein_max: 150,
+        fiber_target: 25, water_target: 100, peptide_type: 'Tirzepatide + MOTS-c + Diamond Glow',
+        no_go_foods: NOGO_DAISY, warning_threshold: 2.5, program_start: '2026-04-04',
         current_doses: { 'Tirzepatide': 1.25, 'MOTS-c': 0.5, 'Diamond Glow': 0.5 }
     };
     return { start_weight: null, goal_weight: null, calorie_target: 2000, protein_min: 120, protein_max: 150,
@@ -454,6 +487,17 @@ async function fetchSummaryLogs() {
         .order('log_date', { ascending: false });
     if (error) throw error;
     return data || [];
+}
+
+async function fetchFirstGLP1ShotDate() {
+    const { data, error } = await sb.from('daily_logs')
+        .select('log_date, shots')
+        .eq('user_id', currentSession.user.id)
+        .order('log_date', { ascending: true });
+    if (error || !data) return null;
+    const glp1 = ['Tirzepatide', 'Retatrutide'];
+    const match = data.find(d => d.shots && glp1.some(p => p in d.shots));
+    return match ? match.log_date : null;
 }
 
 async function fetchWeightHistory() {
@@ -727,16 +771,16 @@ async function loadDashboard() {
 
     showLoading('dash-content');
     try {
-        const [log, pens, masters, weightHist, rate, latestW] = await Promise.all([
-            ensureTodayLog(), fetchMyActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight()
+        const [log, pens, masters, weightHist, rate, latestW, firstGLP1] = await Promise.all([
+            ensureTodayLog(), fetchMyActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight(), fetchFirstGLP1ShotDate()
         ]);
-        renderDashboard(p, log, pens, masters, weightHist, rate, latestW);
+        renderDashboard(p, log, pens, masters, weightHist, rate, latestW, firstGLP1);
     } catch (e) {
         document.getElementById('dash-content').innerHTML = `<div class="text-center py-12 text-red-400">${e.message}</div>`;
     }
 }
 
-function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
+function renderDashboard(p, log, pens, masters, weightHist, rate, latestW, firstGLP1) {
     const schedule = getSchedule(p);
     const todaySched = schedule[activeDayOfWeek()];
     const wk = weekNum(p);
@@ -758,13 +802,22 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     </div>`;
 
     // === WARNINGS ===
-    if (latestW !== null && latestW < 150 && rate !== null && rate > 2) {
+    const inWaterWeightPeriod = firstGLP1 && daysSince(firstGLP1) <= 14;
+    if (inWaterWeightPeriod) {
+        const dayNum = daysSince(firstGLP1);
+        const weekNum_ = dayNum <= 7 ? 1 : 2;
+        html += `<div class="bg-cyan-900/30 border border-cyan-700/40 rounded-xl p-4">
+            <div class="font-bold text-cyan-400">&#x1F4A7; Water Weight Adjustment Period</div>
+            <div class="text-cyan-300 text-sm mt-1">Week ${weekNum_} of GLP-1 start (day ${dayNum} of 14). Rapid initial weight changes are normal water loss &mdash; weight warnings resume after day 14.</div>
+        </div>`;
+    }
+    if (!inWaterWeightPeriod && latestW !== null && latestW < 150 && rate !== null && rate > 2) {
         html += `<div class="bg-red-900/60 border-2 border-red-600 rounded-xl p-4 expiry-pulse">
             <div class="font-bold text-red-400 text-lg">&#x26A0; Gaunt Check Warning</div>
             <div class="text-red-300 text-sm mt-1">Losing ${rate.toFixed(1)} lbs/week at ${latestW} lbs. Increase calories by 150 kcal to protect muscle and collagen.</div>
         </div>`;
     }
-    if (rate !== null && rate > p.warning_threshold) {
+    if (!inWaterWeightPeriod && rate !== null && rate > p.warning_threshold) {
         html += `<div class="bg-yellow-900/50 border border-yellow-600 rounded-xl p-4">
             <div class="font-bold text-yellow-400">&#x26A0; Losing Too Fast</div>
             <div class="text-yellow-300 text-sm mt-1">Rate: ${rate.toFixed(1)} lbs/week (threshold: ${p.warning_threshold}). Increase calories.</div>
@@ -842,9 +895,12 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
         html += '<div class="text-center py-4"><div class="text-2xl mb-1">&#x1F9D8;</div><div class="text-gray-500 text-sm">No shots today \u2014 recovery focus</div></div>';
     }
 
-    // Protein First reminder for Karen on workout days
+    // Protein First reminder for Karen/Daisy on workout days
     if (profileIs(p,'karen') && todaySched.window === 'morning') {
         html += '<div class="bg-blue-900/20 border border-blue-800/30 rounded-xl p-3 mt-2 text-xs text-blue-300 flex items-center gap-2"><span class="text-lg">&#x1F4AA;</span> <span>Protein First: Hit your 90-100g floor to protect muscle tone at 5% incline.</span></div>';
+    }
+    if (profileIs(p,'daisy') && todaySched.type === 'walking') {
+        html += '<div class="bg-blue-900/20 border border-blue-800/30 rounded-xl p-3 mt-2 text-xs text-blue-300 flex items-center gap-2"><span class="text-lg">&#x1F4AA;</span> <span>Protein First: Hit your 130g floor to protect muscle with 5.4 miles of walking + vest training.</span></div>';
     }
     html += '</div>';
 
@@ -879,7 +935,7 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
     </div>`;
 
     // === WORKOUT ===
-    const capWk = profileIs(p,'karen') ? Math.min(wk,12) : Math.min(wk,4);
+    const capWk = profileIs(p,'daisy') ? wk : profileIs(p,'karen') ? Math.min(wk,12) : Math.min(wk,4);
     html += `<div class="card stagger"><div class="section-title">Workout &mdash; Week ${capWk}</div>`;
     if (profileIs(p,'grumpy')) {
         if (todaySched.type==='training') {
@@ -899,14 +955,29 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW) {
                     <div class="bg-gray-800 rounded-lg p-2 text-center"><div class="text-gray-500">Sessions/wk</div><div class="text-white font-bold">${tier.sessions}x</div></div>
                 </div><div class="text-xs text-gray-500 mb-3">&#x1F9BA; 8 lb weighted vest &bull; No handrails</div>`;
         } else { html += '<div class="text-gray-300 mb-3">&#x1F9D8; Rest day</div>'; }
+    } else if (profileIs(p,'daisy')) {
+        if (todaySched.type === 'walking') {
+            const segments = log.workout?.segments || {};
+            html += `<div class="space-y-2 mb-3">`;
+            DAISY_ROUTINE.forEach(seg => {
+                const segDone = !!segments[seg.key];
+                html += `<button onclick="toggleDaisySegment('${seg.key}')" class="btn-shot ${segDone?'btn-shot-done':'bg-gray-800 border border-gray-700 text-gray-300'}" style="${segDone?'':'box-shadow:none'}">
+                    <span class="text-xl">${segDone ? '&#x2705;' : '&#x25CB;'}</span>
+                    <span class="flex-1 text-left"><span class="font-bold">${seg.time}</span> <span class="text-sm">${seg.activity}</span></span>
+                </button>`;
+            });
+            html += `</div><div class="text-xs text-gray-500 mb-3">&#x1F9BA; 10lb weighted vest &bull; No handrails</div>`;
+        } else { html += '<div class="text-gray-300 mb-3">&#x1F9D8; Active Recovery / Rest</div>'; }
     } else { html += `<div class="text-gray-300 mb-3">${todaySched.workout}</div>`; }
 
     const done = log.workout && log.workout.completed;
-    html += `<button onclick="toggleWorkout()" class="btn-shot ${done?'btn-shot-done workout-done-anim':'bg-gray-800 border border-gray-700 text-gray-300'}" style="${done?'':'box-shadow:none'}" >
-        <span class="text-xl">${done ? '&#x2705;' : '&#x25CB;'}</span>
-        <span class="flex-1 text-left font-bold">${done ? 'Workout Complete' : 'Mark Workout Complete'}</span>
-    </button>
-    <button onclick="showScreen('workout')" class="w-full mt-2 py-2.5 text-sm text-gray-500 hover:text-amber-400 transition font-medium">View Full Plan &rarr;</button></div>`;
+    if (!profileIs(p,'daisy') || todaySched.type !== 'walking') {
+        html += `<button onclick="toggleWorkout()" class="btn-shot ${done?'btn-shot-done workout-done-anim':'bg-gray-800 border border-gray-700 text-gray-300'}" style="${done?'':'box-shadow:none'}" >
+            <span class="text-xl">${done ? '&#x2705;' : '&#x25CB;'}</span>
+            <span class="flex-1 text-left font-bold">${done ? 'Workout Complete' : 'Mark Workout Complete'}</span>
+        </button>`;
+    }
+    html += `<button onclick="showScreen('workout')" class="w-full mt-2 py-2.5 text-sm text-gray-500 hover:text-amber-400 transition font-medium">View Full Plan &rarr;</button></div>`;
 
     // === WEIGHT CHART ===
     const totalLoss = p.start_weight && latestW ? (p.start_weight - latestW).toFixed(1) : null;
@@ -983,6 +1054,24 @@ async function toggleWorkout() {
         todayLog.workout = { ...todayLog.workout, completed: !wasCompleted };
         await upsertTodayLog();
         if (!wasCompleted) launchCelebration();
+        await loadDashboard();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function toggleDaisySegment(key) {
+    try {
+        await ensureTodayLog();
+        if (!todayLog.workout) todayLog.workout = { completed: false, notes: '', segments: {} };
+        if (!todayLog.workout.segments) todayLog.workout.segments = {};
+        if (todayLog.workout.segments[key]) {
+            delete todayLog.workout.segments[key];
+        } else {
+            todayLog.workout.segments[key] = new Date().toISOString();
+        }
+        const allDone = DAISY_ROUTINE.every(s => todayLog.workout.segments[s.key]);
+        todayLog.workout.completed = allDone;
+        await upsertTodayLog();
+        if (allDone) launchCelebration();
         await loadDashboard();
     } catch (e) { alert('Error: ' + e.message); }
 }
@@ -1446,6 +1535,26 @@ function renderWorkoutPlan() {
         html += '</div>';
         html += `<div class="card"><div class="section-title">Weekly Schedule</div><div class="space-y-2 text-sm">
             ${Object.entries(KAREN_SCHEDULE).map(([d,s])=>{
+                const today=parseInt(d)===dayOfWeek();
+                const icon = s.window==='morning' ? '&#x1F305;' : '&#x1F319;';
+                return `<div class="flex items-center gap-3 p-2 rounded-lg ${today?'bg-amber-900/30 border border-amber-700':''}">
+                    <span class="w-10 font-bold ${today?'text-amber-400':'text-gray-500'}">${DAYS_SHORT[d]}</span>
+                    <span class="text-xs">${icon}</span>
+                    <span class="text-gray-300 flex-1">${s.shots.join(' + ') || 'Rest'}</span>
+                    <span class="text-gray-500 text-xs">${s.workout}</span></div>`;
+            }).join('')}</div></div>`;
+    } else if (profileIs(p,'daisy')) {
+        html += `<div class="card"><div class="section-title">Daily Routine (Mon&ndash;Fri)</div>
+            <div class="text-xs text-gray-500 mb-3">&#x1F9BA; 10lb weighted vest &bull; No handrails &bull; 5.4 miles total</div>
+            <div class="space-y-2">
+                ${DAISY_ROUTINE.map(s => `<div class="flex items-center gap-3 p-2 bg-gray-800 rounded-lg">
+                    <span class="text-amber-400 font-bold text-sm w-20">${s.time}</span>
+                    <span class="text-gray-300 text-sm">${s.activity}</span>
+                </div>`).join('')}
+            </div>
+            <div class="text-xs text-gray-500 mt-3">Sat&ndash;Sun: Active Recovery / Rest</div></div>`;
+        html += `<div class="card"><div class="section-title">Weekly Schedule</div><div class="space-y-2 text-sm">
+            ${Object.entries(DAISY_SCHEDULE).map(([d,s])=>{
                 const today=parseInt(d)===dayOfWeek();
                 const icon = s.window==='morning' ? '&#x1F305;' : '&#x1F319;';
                 return `<div class="flex items-center gap-3 p-2 rounded-lg ${today?'bg-amber-900/30 border border-amber-700':''}">
