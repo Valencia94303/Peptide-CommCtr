@@ -273,6 +273,123 @@
     };
 
     // ═══════════════════════════════════════════════════════════════
+    //  DAISY V2 — CUSTOM NARRATIVE SLIDES
+    // ═══════════════════════════════════════════════════════════════
+
+    const DAISY_V2_SLIDES = [
+        // 1
+        {
+            label: 'Your Vision',
+            bigIdea: 'The Road to 150',
+            subtitle: 'This isn\u2019t just about weight loss; it\u2019s a personalized roadmap to move you from 170lb to 150lb while building a stronger version of yourself. We are targeting true body recomposition to protect your muscle and heal your joints throughout this high-activity journey.',
+            bullets: [
+                { icon: '\u{1F3AF}', text: '20lb weight loss target (170lb \u2192 150lb)' },
+                { icon: '\u{1F4AA}', text: 'Body recomposition focus to burn fat while keeping tone' },
+                { icon: '\u{1FA79}', text: 'Healing-centric approach for your joints and connective tissue' }
+            ]
+        },
+        // 2
+        {
+            label: 'The Philosophy',
+            bigIdea: 'Beyond the Scale',
+            subtitle: 'Most people lose muscle when they cut weight, but your protocol is designed to burn fat while fueling your endurance-level activity. By using peptides as specific biological tools, we ensure your body uses stored fat for energy instead of breaking down your hard-earned muscle.',
+            bullets: [
+                { icon: '\u{1F525}', text: 'Fat for fuel vs. muscle for energy' },
+                { icon: '\u{1F6B6}', text: 'Support for 5.4-mile daily walks and weighted training' },
+                { icon: '\u{1F6E1}', text: 'Protecting "internal scaffolding" with specialized repair signals' }
+            ]
+        },
+        // 3
+        {
+            label: 'Peptide 1 of 3',
+            bigIdea: 'Tirzepatide: Your Metabolic Anchor',
+            subtitle: 'Tirzepatide stabilizes your blood sugar and eliminates "food noise" to make your 150lb goal sustainable without the feeling of starvation. This serves as the foundation of your stack, allowing your body to manage cravings even with your high activity level.',
+            bullets: [
+                { icon: '\u{2693}', text: 'GLP-1/GIP co-agonist that turns off food cravings' },
+                { icon: '\u{2696}', text: 'Metabolic stabilization to prevent "starvation" feelings during exercise' },
+                { icon: '\u{1F489}', text: '25-unit (1.25mg) starting micro-dose administered on Mondays' }
+            ]
+        },
+        // 4
+        {
+            label: 'Peptide 2 of 3',
+            bigIdea: 'MOTS-c: Fueling the Endurance Athlete',
+            subtitle: 'MOTS-c acts as an "exercise powerhouse" by mimicking the signals of a hard workout to maximize mitochondrial efficiency. This is timed specifically to your active days to ensure your "cellular batteries" are firing at 100%.',
+            bullets: [
+                { icon: '\u{26A1}', text: 'Mitochondrial-derived peptide that acts as a cellular power-up' },
+                { icon: '\u{1F489}', text: '30-unit (0.5mg) dose to maximize fat burning' },
+                { icon: '\u{1F4C5}', text: 'Pulsed 4x weekly (Mon/Tue/Thu/Sat) to match your most active days' }
+            ]
+        },
+        // 5
+        {
+            label: 'Peptide 3 of 3',
+            bigIdea: 'Diamond Glow: The Recovery Shield',
+            subtitle: 'As you shed weight and train with your 10lb vest, Diamond Glow repairs connective tissue and tightens skin. It acts as your recovery shield, repairing the wear-and-tear of your training while you sleep.',
+            bullets: [
+                { icon: '\u{2728}', text: 'Natural GHK-Cu copper peptide for skin and tissue repair' },
+                { icon: '\u{1F489}', text: '10-unit (0.5mg) dose to maintain skin elasticity during weight loss' },
+                { icon: '\u{1F319}', text: 'Administered 3x weekly (Wed/Fri/Sun) during deep REM sleep' }
+            ]
+        },
+        // 6
+        {
+            label: 'The Strategy',
+            bigIdea: 'The Pulse Strategy',
+            subtitle: 'Your 4x\u20135x weekly rhythm is not "more shots," but rather a high-performance pulse designed to match your endurance athlete lifestyle. While standard protocols are often weekly, your stack is timed to match your body\u2019s specific "active" and "recovery" windows.',
+            bullets: [
+                { icon: '\u{1F4CA}', text: 'MOTS-c is a "pulse" vs. a long-lasting signal, requiring frequent dosing' },
+                { icon: '\u{1F6B6}', text: 'Fueling 5.4-mile walks and 8:00 PM sessions requires consistent support' },
+                { icon: '\u{1F9EC}', text: 'Matching peptide delivery to your 40-year-young biological demand' }
+            ]
+        },
+        // 7
+        {
+            label: 'Morning Protocol',
+            bigIdea: 'Morning Execution',
+            subtitle: 'Every Mon, Tue, Thu, and Sat at 6:00 AM, you will "prime" your system for your first 2-mile walk. This fasted window tells your body to prioritize fat burning the moment you step out the door.',
+            bullets: [
+                { icon: '\u{1F305}', text: '06:00 AM fasted administration of MOTS-c (and Tirz on Mondays)' },
+                { icon: '\u{1F3C3}', text: '06:30 AM 2-mile walk start to utilize the peptide "prime"' },
+                { icon: '\u{1F6AB}', text: 'No handrails during walking to force core stabilization of the 10lb vest' }
+            ]
+        },
+        // 8
+        {
+            label: 'Evening Protocol',
+            bigIdea: 'Evening Execution',
+            subtitle: 'Your 10:00 PM recovery window is strategically placed two hours after your 8:00 PM weighted vest session. This ensures the Glow peptide works in tandem with deep REM sleep to repair the stress of the 10lb vest.',
+            bullets: [
+                { icon: '\u{1F9BA}', text: '08:00 PM bodyweight training with 10lb weighted vest' },
+                { icon: '\u{1F319}', text: '10:00 PM bedtime administration for repair and scaffolding' },
+                { icon: '\u{23F0}', text: '2-hour post-meal rule (check the dashboard "Fasting Icon")' }
+            ]
+        },
+        // 9
+        {
+            label: 'Safety Rules',
+            bigIdea: 'The Guardrails',
+            subtitle: 'To succeed, you must stay within the non-negotiable guardrails of your protocol: high protein intake and strict allergy avoidance. These rules are the essential requirements for keeping your muscle tone as the fat melts away.',
+            bullets: [
+                { icon: '\u{1F6E1}', text: '140g daily Protein Floor to prevent the body from "eating" muscle' },
+                { icon: '\u{1F6A8}', text: 'STRICTLY NO PINEAPPLE due to your allergy (Hard-locked in dashboard)', alert: true },
+                { icon: '\u{1F4F1}', text: 'Use the dashboard to log meals and check "Fasting Icons" before shots' }
+            ]
+        },
+        // 10
+        {
+            label: 'Team Effort',
+            bigIdea: 'Shared Success',
+            subtitle: 'You are using a shared inventory system with Miguel and Karen, making your journey a true family team effort. Every time you log a dose, you help the entire household stay synced and prepared for the next fresh batch.',
+            bullets: [
+                { icon: '\u{1F489}', text: 'Doses decrement from the Shared Master Pen Inventory' },
+                { icon: '\u{1F46A}', text: 'Logging helps Miguel/Karen know when to mix fresh batches' },
+                { icon: '\u{1F3E0}', text: 'Synchronized routine with the household for simplicity and support' }
+            ]
+        }
+    ];
+
+    // ═══════════════════════════════════════════════════════════════
     //  SLIDE GENERATOR  (always produces exactly 10 slides)
     // ═══════════════════════════════════════════════════════════════
 
@@ -455,7 +572,8 @@
         const navigate = useNavigate();
         const userId = (params.userId || '').toLowerCase();
 
-        const protocol = PROTOCOLS[userId];
+        const isV2 = userId === 'daisy-v2';
+        const protocol = isV2 ? PROTOCOLS['daisy'] : PROTOCOLS[userId];
         const [current, setCurrent] = useState(0);
         const [direction, setDirection] = useState(1);
 
@@ -488,7 +606,7 @@
             </div>`;
         }
 
-        const slides = generateSlides(protocol);
+        const slides = isV2 ? DAISY_V2_SLIDES : generateSlides(protocol);
         const slide = slides[current];
 
         function goTo(idx) {
@@ -514,10 +632,10 @@
             <div className="glass-header px-4 py-3 flex items-center justify-between shrink-0">
                 <a href="index.html" className="text-gray-500 hover:text-gray-300 text-sm font-medium transition">\u2190 App</a>
                 <div className="text-center">
-                    <span className="text-xs font-bold text-gradient">${protocol.emoji} ${protocol.name}'s Onboarding</span>
+                    <span className="text-xs font-bold text-gradient">${protocol.emoji} ${protocol.name}'s Onboarding${isV2 ? ' v2' : ''}</span>
                     <span className="block text-[10px] text-gray-600 font-mono">${current + 1} / ${slides.length}</span>
                 </div>
-                <button onClick=${function () { exportToPPTX(slides, protocol.name); }}
+                <button onClick=${function () { exportToPPTX(slides, protocol.name + (isV2 ? ' v2' : '')); }}
                     className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 hover:border-amber-500/40 hover:text-amber-400 transition"
                     title="Download PowerPoint">
                     \u{2B07} .pptx
@@ -639,7 +757,8 @@
         const users = [
             { id: 'grumpy', name: 'Grumpy (Miguel)', emoji: '\u{1F4AA}', desc: '297 \u2192 200lb \u2022 Retatrutide + MOTS-c + Wolverine + DG', color: 'from-amber-500 to-orange-600' },
             { id: 'karen', name: 'Karen', emoji: '\u{1F338}', desc: '130 \u2192 115lb \u2022 Tirzepatide + MOTS-c + DG', color: 'from-pink-500 to-rose-600' },
-            { id: 'daisy', name: 'Daisy', emoji: '\u{1F33C}', desc: '170 \u2192 150lb \u2022 Tirzepatide + MOTS-c + DG', color: 'from-yellow-400 to-amber-500' }
+            { id: 'daisy', name: 'Daisy', emoji: '\u{1F33C}', desc: '170 \u2192 150lb \u2022 Tirzepatide + MOTS-c + DG', color: 'from-yellow-400 to-amber-500' },
+            { id: 'daisy-v2', name: 'Daisy \u2014 Deep Dive', emoji: '\u{1F33C}', desc: 'Narrative protocol guide \u2022 Pulse strategy + execution windows', color: 'from-yellow-400 to-amber-600', badge: 'v2' }
         ];
 
         return html`<div className="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center p-6">
@@ -658,7 +777,7 @@
                             ${u.emoji}
                         </div>
                         <div className="min-w-0">
-                            <div className="font-bold text-gray-100">${u.name}</div>
+                            <div className="font-bold text-gray-100">${u.name}${u.badge ? html` <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 ml-1 align-middle">${u.badge}</span>` : ''}</div>
                             <div className="text-xs text-gray-500 truncate">${u.desc}</div>
                         </div>
                         <span className="ml-auto text-gray-600 text-lg">\u203A</span>
