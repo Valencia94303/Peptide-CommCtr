@@ -69,13 +69,11 @@ To keep things simple, you only ever worry about **one** shot window per day.
 
 ## ⚠️ The "Daisy Safety" Rules
 
-Because your protocol is high-volume, these three rules are non-negotiable:
+Because your protocol is high-volume, these two rules are non-negotiable:
 
 1. **NO PINEAPPLE:** Your dashboard has a hard-lock on this. Pineapple is strictly forbidden due to your allergy.
     
 2. **The Protein Floor:** You must hit **140g of protein daily**. With 5.4 miles of walking and a 10lb vest, if you don't eat enough protein, your body will "eat" your muscle for energy. We want to lose the fat, keep the tone.
-    
-3. **No Handrails:** When you are walking, especially if you add incline later, do not touch the handrails. This forces your core to stabilize that 10lb vest.
     
 
 ---
