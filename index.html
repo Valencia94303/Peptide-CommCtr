@@ -212,6 +212,16 @@
         <div id="workout-content" class="p-4 space-y-4 pb-8"></div>
     </div>
 
+    <!-- ==================== WEEKLY SHOTS SCREEN ==================== -->
+    <div id="screen-shots" class="hidden fade-in">
+        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
+            <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
+            <h2 class="text-lg font-bold text-amber-500">&#x1F489; Weekly Shots</h2>
+            <div class="w-8"></div>
+        </div>
+        <div id="shots-content" class="p-4 space-y-4 pb-8"></div>
+    </div>
+
     <!-- ==================== SETTINGS SCREEN ==================== -->
     <div id="screen-settings" class="hidden fade-in">
         <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
@@ -731,7 +741,7 @@ function setBtnLoading(id, loading) {
 // ╚══════════════════════════════════════════════════════════════╝
 
 let lastScreen = 'auth';
-const screenOrder = ['auth','dashboard','lab','workout','settings'];
+const screenOrder = ['auth','dashboard','lab','workout','shots','settings'];
 
 function showScreen(name) {
     const fromIdx = screenOrder.indexOf(lastScreen);
@@ -757,6 +767,7 @@ function showScreen(name) {
     if (name === 'dashboard') loadDashboard();
     if (name === 'lab') loadLab();
     if (name === 'workout') renderWorkoutPlan();
+    if (name === 'shots') renderShotsSchedule();
     if (name === 'settings') loadSettings();
 }
 
@@ -821,16 +832,23 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW, first
 
     // === DATE NAVIGATOR ===
     const viewing = activeDate();
-    const isPast = !isViewingToday();
+    const isPast = viewing < todayStr();
+    const isFuture = viewing > todayStr();
+    const isToday = viewing === todayStr();
+    const maxFuture = shiftDate(todayStr(), 2);
+    const canGoForward = viewing < maxFuture;
+    const navLabel = isPast ? 'VIEWING PAST DATE' : isFuture ? 'PLANNING AHEAD' : '';
+    const navColor = isPast ? 'text-amber-300' : isFuture ? 'text-cyan-300' : 'text-gray-300';
+    const navLabelColor = isPast ? 'text-amber-400' : 'text-cyan-400';
     html += `<div class="flex items-center justify-between py-1">
         <button onclick="navDate(-1)" class="w-10 h-10 flex items-center justify-center rounded-xl bg-gray-800 text-gray-400 text-lg transition active:scale-90">&larr;</button>
         <div class="text-center flex-1">
-            ${isPast ? '<div class="text-xs text-amber-400 font-bold mb-0.5">VIEWING PAST DATE</div>' : ''}
-            <div class="text-sm font-bold ${isPast ? 'text-amber-300' : 'text-gray-300'}">${DAYS[activeDayOfWeek()]}, ${formatDate(viewing)}</div>
+            ${navLabel ? '<div class="text-xs '+navLabelColor+' font-bold mb-0.5">'+navLabel+'</div>' : ''}
+            <div class="text-sm font-bold ${navColor}">${DAYS[activeDayOfWeek()]}, ${formatDate(viewing)}</div>
         </div>
-        <button onclick="${isPast ? 'navDate(1)' : ''}" class="w-10 h-10 flex items-center justify-center rounded-xl ${isPast ? 'bg-gray-800 text-gray-400 active:scale-90' : 'bg-gray-800/30 text-gray-700'} text-lg transition">&rarr;</button>
+        <button onclick="${canGoForward ? 'navDate(1)' : ''}" class="w-10 h-10 flex items-center justify-center rounded-xl ${canGoForward ? 'bg-gray-800 text-gray-400 active:scale-90' : 'bg-gray-800/30 text-gray-700'} text-lg transition">&rarr;</button>
     </div>`;
-    if (isPast) html += `<button onclick="navToToday()" class="w-full py-2 rounded-xl bg-amber-600/20 border border-amber-600/30 text-amber-400 text-sm font-bold transition active:scale-[0.97]">Jump to Today</button>`;
+    if (!isToday) html += `<button onclick="navToToday()" class="w-full py-2 rounded-xl ${isPast ? 'bg-amber-600/20 border border-amber-600/30 text-amber-400' : 'bg-cyan-600/20 border border-cyan-600/30 text-cyan-400'} text-sm font-bold transition active:scale-[0.97]">Jump to Today</button>`;
     html += `
     </div>`;
 
@@ -1010,7 +1028,10 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW, first
             <span class="flex-1 text-left font-bold">${done ? 'Workout Complete' : 'Mark Workout Complete'}</span>
         </button>`;
     }
-    html += `<button onclick="showScreen('workout')" class="w-full mt-2 py-2.5 text-sm text-gray-500 hover:text-amber-400 transition font-medium">View Full Plan &rarr;</button></div>`;
+    html += `<div class="flex gap-2 mt-2">
+        <button onclick="showScreen('workout')" class="flex-1 py-2.5 text-sm text-gray-500 hover:text-amber-400 transition font-medium rounded-lg">Full Workout Plan &rarr;</button>
+        <button onclick="showScreen('shots')" class="flex-1 py-2.5 text-sm text-gray-500 hover:text-amber-400 transition font-medium rounded-lg">Weekly Shots &rarr;</button>
+    </div></div>`;
 
     // === WEIGHT CHART ===
     const totalLoss = p.start_weight && latestW ? (p.start_weight - latestW).toFixed(1) : null;
@@ -1065,6 +1086,7 @@ async function logShot(peptide) {
             if (!confirm('Shot already logged. Undo?')) return;
             delete todayLog.shots[peptide];
         } else {
+            // Always record the real administration timestamp
             todayLog.shots[peptide] = new Date().toISOString();
         }
         await upsertTodayLog();
@@ -1600,6 +1622,91 @@ function renderWorkoutPlan() {
         html += '<div class="card"><div class="text-gray-500 text-center py-8">Custom workout plan not configured.</div></div>';
     }
     document.getElementById('workout-content').innerHTML = html;
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              13b. WEEKLY SHOT SCHEDULE                      ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+function renderShotsSchedule() {
+    if (!currentProfile) return;
+    const p = currentProfile;
+    const sched = getSchedule(p);
+    const doses = p.current_doses || {};
+
+    let html = `<div class="card"><div class="section-title">Your Peptide Stack</div>
+        <div class="text-sm text-gray-300 mb-2">${p.peptide_type || 'Not configured'}</div>
+        <div class="grid grid-cols-2 gap-2">`;
+    Object.entries(doses).forEach(([name, mg]) => {
+        html += `<div class="bg-gray-800 rounded-lg p-2.5 text-center">
+            <div class="text-amber-400 font-bold text-sm">${name}</div>
+            <div class="text-white text-lg font-extrabold">${mg}mg</div>
+        </div>`;
+    });
+    html += `</div></div>`;
+
+    html += `<div class="card"><div class="section-title">Weekly Shot Schedule</div><div class="space-y-3">`;
+
+    for (let d = 0; d < 7; d++) {
+        const day = sched[d];
+        if (!day) continue;
+        const isToday = d === dayOfWeek();
+        const isMorning = day.window === 'morning';
+        const icon = isMorning ? '&#x1F305;' : '&#x1F319;';
+        const windowLabel = isMorning ? 'Morning (Fasted)' : 'Evening (Bedtime)';
+        const shots = day.shots || [];
+        const hasShots = shots.length > 0;
+
+        html += `<div class="rounded-xl p-3 ${isToday ? 'bg-amber-900/20 border border-amber-700' : 'bg-gray-800/60 border border-gray-700/50'}">
+            <div class="flex items-center justify-between mb-1.5">
+                <div class="flex items-center gap-2">
+                    <span class="font-bold text-sm ${isToday ? 'text-amber-400' : 'text-gray-300'}">${DAYS[d]}</span>
+                    ${isToday ? '<span class="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">TODAY</span>' : ''}
+                </div>
+                <div class="flex items-center gap-1.5 text-xs">
+                    <span>${icon}</span>
+                    <span class="${isMorning ? 'text-blue-400' : 'text-purple-400'} font-medium">${windowLabel}</span>
+                </div>
+            </div>`;
+
+        if (hasShots) {
+            shots.forEach(peptide => {
+                const mg = doses[peptide];
+                html += `<div class="flex items-center gap-2 py-1.5 ${shots.length > 1 ? 'border-t border-gray-700/40' : ''}">
+                    <span class="text-sm">&#x1F489;</span>
+                    <span class="text-gray-100 font-medium text-sm flex-1">${peptide}</span>
+                    ${mg ? '<span class="text-amber-400 font-bold text-xs">' + mg + 'mg</span>' : ''}
+                </div>`;
+            });
+            html += `<div class="text-xs text-gray-500 mt-1">${day.fasting}</div>`;
+        } else {
+            html += `<div class="text-gray-500 text-sm py-1">No shots scheduled</div>`;
+        }
+        html += `</div>`;
+    }
+
+    html += `</div></div>`;
+
+    // Summary card
+    let totalShots = 0;
+    const peptideDays = {};
+    for (let d = 0; d < 7; d++) {
+        const shots = sched[d]?.shots || [];
+        totalShots += shots.length;
+        shots.forEach(pep => { if (!peptideDays[pep]) peptideDays[pep] = []; peptideDays[pep].push(DAYS_SHORT[d]); });
+    }
+    html += `<div class="card"><div class="section-title">Weekly Summary</div>
+        <div class="text-sm text-gray-300 mb-3">${totalShots} total injections per week</div>
+        <div class="space-y-2">`;
+    Object.entries(peptideDays).forEach(([pep, days]) => {
+        html += `<div class="flex items-center justify-between py-1.5 border-t border-gray-800">
+            <span class="text-gray-200 font-medium text-sm">${pep}</span>
+            <span class="text-gray-400 text-xs">${days.join(', ')} (${days.length}x/wk)</span>
+        </div>`;
+    });
+    html += `</div></div>`;
+
+    document.getElementById('shots-content').innerHTML = html;
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
