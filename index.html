@@ -184,6 +184,7 @@
             </div>
             <div class="flex gap-2 items-center">
                 <button onclick="showSummaryModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 text-lg transition active:scale-90" title="Activity Summary">&#x1F4CA;</button>
+                <button onclick="showLeaderboardModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-blue-900/30 text-blue-400 text-lg transition active:scale-90" title="Household Leaderboard">&#x1F3C6;</button>
                 <button onclick="showNoGoModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-red-900/30 text-red-400 text-lg transition active:scale-90" title="No-Go Foods">&#x1F6AB;</button>
                 <button id="btn-lab" onclick="showScreen('lab')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-amber-900/30 text-amber-400 text-lg transition active:scale-90 hidden" title="Admin Lab">&#x2697;&#xFE0F;</button>
                 <button onclick="showScreen('settings')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-800 text-gray-400 text-lg transition active:scale-90" title="Settings">&#x2699;&#xFE0F;</button>
@@ -1975,6 +1976,95 @@ function showNoGoModal() {
     }
     html += '</div><button onclick="closeModal()" class="btn-secondary mt-6">Got It</button>';
     showModal(html);
+}
+
+async function showLeaderboardModal() {
+    if (!currentProfile) return;
+    showModal('<div class="flex items-center justify-center py-12"><div class="spinner"></div></div>');
+    try {
+        const profiles = await fetchAllProfiles();
+        // Get this week's date range (Mon-Sun)
+        const today = new Date(todayStr() + 'T12:00:00');
+        const dow = today.getDay();
+        const mondayOffset = dow === 0 ? -6 : 1 - dow;
+        const monday = shiftDate(todayStr(), mondayOffset);
+        const sunday = shiftDate(monday, 6);
+
+        let html = `<div class="text-center mb-5"><div class="text-4xl mb-2">&#x1F3C6;</div>
+            <h3 class="text-xl font-bold text-gradient">Household Leaderboard</h3>
+            <p class="text-gray-500 text-sm">Week of ${formatDate(monday)} &mdash; ${formatDate(sunday)}</p></div>`;
+
+        const leaderData = [];
+        for (const user of profiles) {
+            const { data: logs } = await sb.from('daily_logs').select('log_date, shots, protein, workout')
+                .eq('user_id', user.id).gte('log_date', monday).lte('log_date', sunday);
+            const sched = getSchedule(user);
+
+            let shotsDue = 0, shotsDone = 0, workoutsDue = 0, workoutsDone = 0, proteinDays = 0, proteinHit = 0;
+
+            for (let i = 0; i <= Math.min(6, daysSince(monday)); i++) {
+                const date = shiftDate(monday, i);
+                if (date > todayStr()) break;
+                const d = new Date(date + 'T12:00:00').getDay();
+                const daySched = sched[d];
+                const log = (logs || []).find(l => l.log_date === date);
+
+                // Shots
+                const scheduledShots = daySched?.shots || [];
+                shotsDue += scheduledShots.length;
+                if (log && log.shots) {
+                    scheduledShots.forEach(s => { if (log.shots[s]) shotsDone++; });
+                }
+
+                // Workouts
+                const type = daySched?.type;
+                if (type && type !== 'rest' && type !== 'recovery') {
+                    workoutsDue++;
+                    if (log && log.workout && log.workout.completed) workoutsDone++;
+                }
+
+                // Protein
+                proteinDays++;
+                if (log && log.protein && parseFloat(log.protein) >= (user.protein_min || 0)) proteinHit++;
+            }
+
+            const shotPct = shotsDue > 0 ? Math.round((shotsDone / shotsDue) * 100) : 100;
+            const workPct = workoutsDue > 0 ? Math.round((workoutsDone / workoutsDue) * 100) : 100;
+            const protPct = proteinDays > 0 ? Math.round((proteinHit / proteinDays) * 100) : 0;
+            const overall = Math.round((shotPct + workPct + protPct) / 3);
+
+            leaderData.push({ name: user.display_name, shotPct, workPct, protPct, overall });
+        }
+
+        // Sort by overall score descending
+        leaderData.sort((a, b) => b.overall - a.overall);
+        const medals = ['&#x1F947;', '&#x1F948;', '&#x1F949;'];
+
+        leaderData.forEach((u, i) => {
+            const medal = medals[i] || '';
+            const barColor = u.overall >= 80 ? 'from-emerald-500 to-emerald-400' : u.overall >= 50 ? 'from-amber-500 to-amber-400' : 'from-red-500 to-red-400';
+            html += `<div class="bg-gray-800 rounded-xl p-4 mb-3 border border-gray-700/50">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xl">${medal}</span>
+                        <span class="font-bold text-gray-100">${u.name}</span>
+                    </div>
+                    <span class="text-xl font-extrabold text-gradient">${u.overall}%</span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-2 mb-3"><div class="bg-gradient-to-r ${barColor} h-2 rounded-full" style="width:${u.overall}%"></div></div>
+                <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div><div class="text-gray-500">Shots</div><div class="font-bold ${u.shotPct>=80?'text-emerald-400':u.shotPct>=50?'text-amber-400':'text-red-400'}">${u.shotPct}%</div></div>
+                    <div><div class="text-gray-500">Workouts</div><div class="font-bold ${u.workPct>=80?'text-emerald-400':u.workPct>=50?'text-amber-400':'text-red-400'}">${u.workPct}%</div></div>
+                    <div><div class="text-gray-500">Protein</div><div class="font-bold ${u.protPct>=80?'text-emerald-400':u.protPct>=50?'text-amber-400':'text-red-400'}">${u.protPct}%</div></div>
+                </div>
+            </div>`;
+        });
+
+        html += '<button onclick="closeModal()" class="btn-secondary mt-4">Close</button>';
+        showModal(html);
+    } catch (e) {
+        showModal(`<div class="text-red-400 text-center py-6">${e.message}</div><button onclick="closeModal()" class="btn-secondary mt-4">Close</button>`);
+    }
 }
 
 async function showSummaryModal() {
