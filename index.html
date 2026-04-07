@@ -174,6 +174,7 @@
                         <div><div id="pm-name" class="text-sm font-bold text-gray-100"></div><div class="text-[10px] text-gray-500">Team Member</div></div>
                     </div>
                     <button onclick="openMyProtocol()" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F4D6; My Protocol Guide</button>
+                    <button onclick="toggleProfileMenu();showScreen('measurements')" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F4CF; Body Measurements</button>
                     <div class="border-t border-gray-800"></div>
                     <button onclick="toggleProfileMenu();showScreen('settings')" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x2699;&#xFE0F; Settings</button>
                 </div>
@@ -228,6 +229,16 @@
                 <button onclick="sendMessage()" class="btn-primary px-5 py-3 text-sm" style="width:auto;min-height:auto">Send</button>
             </div>
         </div>
+    </div>
+
+    <!-- ==================== MEASUREMENTS SCREEN ==================== -->
+    <div id="screen-measurements" class="hidden fade-in">
+        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
+            <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
+            <h2 class="text-lg font-bold text-amber-500">&#x1F4CF; Body Measurements</h2>
+            <div class="w-8"></div>
+        </div>
+        <div id="measurements-content" class="p-4 space-y-4 pb-8"></div>
     </div>
 
     <!-- ==================== WEEKLY SHOTS SCREEN ==================== -->
@@ -809,7 +820,7 @@ function setBtnLoading(id, loading) {
 // ╚══════════════════════════════════════════════════════════════╝
 
 let lastScreen = 'auth';
-const screenOrder = ['auth','dashboard','messages','lab','workout','shots','settings'];
+const screenOrder = ['auth','dashboard','messages','lab','workout','shots','measurements','settings'];
 
 function showScreen(name) {
     const fromIdx = screenOrder.indexOf(lastScreen);
@@ -837,6 +848,7 @@ function showScreen(name) {
     if (name === 'messages') loadMessages();
     if (name === 'workout') renderWorkoutPlan();
     if (name === 'shots') renderShotsSchedule();
+    if (name === 'measurements') loadMeasurements();
     if (name === 'settings') loadSettings();
 }
 
@@ -2083,6 +2095,141 @@ function renderShotsSchedule() {
     html += `</div></div>`;
 
     document.getElementById('shots-content').innerHTML = html;
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              13c. BODY MEASUREMENTS                         ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+const MEASURE_FIELDS = [
+    { key: 'waist', label: 'Waist', unit: 'in' },
+    { key: 'hips', label: 'Hips', unit: 'in' },
+    { key: 'chest', label: 'Chest', unit: 'in' },
+    { key: 'left_arm', label: 'Left Arm', unit: 'in' },
+    { key: 'right_arm', label: 'Right Arm', unit: 'in' },
+    { key: 'left_thigh', label: 'Left Thigh', unit: 'in' },
+    { key: 'right_thigh', label: 'Right Thigh', unit: 'in' }
+];
+
+async function loadMeasurements() {
+    const el = document.getElementById('measurements-content');
+    el.innerHTML = '<div class="flex items-center justify-center py-16"><div class="spinner"></div></div>';
+    try {
+        const { data, error } = await sb.from('measurements').select('*')
+            .eq('user_id', currentSession.user.id).order('measured_date', { ascending: false }).limit(30);
+        if (error) throw error;
+        renderMeasurements(data || []);
+    } catch (e) {
+        el.innerHTML = `<div class="text-center py-12 text-gray-500"><div class="text-3xl mb-2">&#x1F4CF;</div>
+            <p class="text-sm">Measurements not available yet.</p>
+            <p class="text-xs text-gray-600 mt-1">Run migration-006-measurements.sql in Supabase.</p></div>`;
+    }
+}
+
+function renderMeasurements(history) {
+    let html = '';
+
+    // Log new measurement form
+    html += `<div class="card"><div class="section-title">Log Measurement</div>
+        <div class="grid grid-cols-2 gap-3">`;
+    MEASURE_FIELDS.forEach(f => {
+        html += `<div><label class="label">${f.label} (${f.unit})</label>
+            <input type="number" inputmode="decimal" step="0.1" class="input-field" id="meas-${f.key}" placeholder="0.0"></div>`;
+    });
+    html += `</div>
+        <div class="mt-3"><label class="label">Date</label>
+            <input type="date" class="input-field" id="meas-date" value="${todayStr()}">
+        </div>
+        <div class="mt-3"><label class="label">Notes (optional)</label>
+            <input type="text" class="input-field" id="meas-notes" placeholder="e.g. Morning, post-workout" maxlength="200">
+        </div>
+        <button onclick="saveMeasurement()" class="btn-primary mt-4">Save Measurement</button>
+    </div>`;
+
+    // Trend summary (compare first vs latest)
+    if (history.length >= 2) {
+        const latest = history[0];
+        const first = history[history.length - 1];
+        html += `<div class="card"><div class="section-title">Changes Since ${formatDate(first.measured_date)}</div>
+            <div class="grid grid-cols-2 gap-2">`;
+        MEASURE_FIELDS.forEach(f => {
+            const start = parseFloat(first[f.key]);
+            const now = parseFloat(latest[f.key]);
+            if (!start || !now) return;
+            const diff = (now - start).toFixed(1);
+            const color = diff < 0 ? 'text-emerald-400' : diff > 0 ? 'text-red-400' : 'text-gray-400';
+            const arrow = diff < 0 ? '&darr;' : diff > 0 ? '&uarr;' : '&mdash;';
+            html += `<div class="bg-gray-800 rounded-lg p-2.5 text-center">
+                <div class="text-xs text-gray-500">${f.label}</div>
+                <div class="text-white font-bold">${now}"</div>
+                <div class="${color} text-xs font-bold">${arrow} ${Math.abs(diff)}"</div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
+
+    // History
+    html += `<div class="card"><div class="section-title">History</div>`;
+    if (history.length === 0) {
+        html += '<div class="text-gray-600 text-sm text-center py-4">No measurements logged yet</div>';
+    } else {
+        history.forEach(entry => {
+            html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 border border-gray-700">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-bold text-amber-400">${formatDate(entry.measured_date)}</span>
+                    <button onclick="deleteMeasurement('${entry.id}')" class="text-gray-600 hover:text-red-400 text-sm">&times;</button>
+                </div>
+                <div class="grid grid-cols-4 gap-1 text-center text-xs">`;
+            MEASURE_FIELDS.forEach(f => {
+                const val = entry[f.key];
+                if (val) html += `<div><span class="text-gray-500">${f.label}</span><br><span class="text-gray-200 font-bold">${val}"</span></div>`;
+            });
+            html += `</div>`;
+            if (entry.notes) html += `<div class="text-xs text-gray-500 mt-2">${escapeHtml(entry.notes)}</div>`;
+            html += `</div>`;
+        });
+    }
+    html += '</div>';
+
+    document.getElementById('measurements-content').innerHTML = html;
+}
+
+async function saveMeasurement() {
+    const dateVal = document.getElementById('meas-date').value;
+    if (!dateVal) { alert('Please select a date'); return; }
+
+    const payload = {
+        user_id: currentSession.user.id,
+        measured_date: dateVal,
+        notes: document.getElementById('meas-notes').value || null
+    };
+
+    let hasData = false;
+    MEASURE_FIELDS.forEach(f => {
+        const val = document.getElementById('meas-' + f.key).value;
+        payload[f.key] = val ? parseFloat(val) : null;
+        if (val) hasData = true;
+    });
+
+    if (!hasData) { alert('Enter at least one measurement'); return; }
+
+    try {
+        const { error } = await sb.from('measurements').upsert(payload, { onConflict: 'user_id,measured_date' });
+        if (error) throw error;
+        // Clear form
+        MEASURE_FIELDS.forEach(f => { document.getElementById('meas-' + f.key).value = ''; });
+        document.getElementById('meas-notes').value = '';
+        loadMeasurements();
+    } catch (e) { alert('Save error: ' + e.message); }
+}
+
+async function deleteMeasurement(id) {
+    if (!confirm('Delete this measurement?')) return;
+    try {
+        const { error } = await sb.from('measurements').delete().eq('id', id);
+        if (error) throw error;
+        loadMeasurements();
+    } catch (e) { alert('Error: ' + e.message); }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
