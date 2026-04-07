@@ -818,13 +818,13 @@ async function loadDashboard() {
         const [log, pens, masters, weightHist, rate, latestW, firstGLP1] = await Promise.all([
             ensureTodayLog(), fetchMyActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight(), fetchFirstGLP1ShotDate()
         ]);
-        renderDashboard(p, log, pens, masters, weightHist, rate, latestW, firstGLP1);
+        await renderDashboard(p, log, pens, masters, weightHist, rate, latestW, firstGLP1);
     } catch (e) {
         document.getElementById('dash-content').innerHTML = `<div class="text-center py-12 text-red-400">${e.message}</div>`;
     }
 }
 
-function renderDashboard(p, log, pens, masters, weightHist, rate, latestW, firstGLP1) {
+async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW, firstGLP1) {
     const schedule = getSchedule(p);
     const todaySched = schedule[activeDayOfWeek()];
     const wk = weekNum(p);
@@ -1050,8 +1050,195 @@ function renderDashboard(p, log, pens, masters, weightHist, rate, latestW, first
     html += `<div class="relative" style="height:180px"><canvas id="weight-chart"></canvas></div>
         <div class="flex justify-between text-xs text-gray-500 mt-2"><span>Start: ${p.start_weight||'?'} lbs</span>${latestW?'<span class="text-white font-bold">Current: '+latestW+' lbs</span>':''}<span>Goal: ${p.goal_weight||'?'} lbs</span></div></div>`;
 
+    // === STREAKS & MILESTONES ===
+    const streaks = await computeStreaks(p);
+    const milestoneData = checkMilestones(p, latestW, weightHist, streaks);
+
+    if (streaks.shots > 0 || streaks.protein > 0 || streaks.workout > 0 || streaks.water > 0) {
+        html += `<div class="card stagger"><div class="section-title">Current Streaks</div>
+            <div class="grid grid-cols-2 gap-2">`;
+        if (streaks.shots > 0) html += `<div class="bg-gray-800 rounded-lg p-2.5 text-center"><div class="text-xl">&#x1F489;</div><div class="text-white font-extrabold text-lg">${streaks.shots}</div><div class="text-gray-500 text-[10px] uppercase font-bold">Day Shot Streak</div></div>`;
+        if (streaks.protein > 0) html += `<div class="bg-gray-800 rounded-lg p-2.5 text-center"><div class="text-xl">&#x1F969;</div><div class="text-white font-extrabold text-lg">${streaks.protein}</div><div class="text-gray-500 text-[10px] uppercase font-bold">Day Protein Streak</div></div>`;
+        if (streaks.workout > 0) html += `<div class="bg-gray-800 rounded-lg p-2.5 text-center"><div class="text-xl">&#x1F4AA;</div><div class="text-white font-extrabold text-lg">${streaks.workout}</div><div class="text-gray-500 text-[10px] uppercase font-bold">Day Workout Streak</div></div>`;
+        if (streaks.water > 0) html += `<div class="bg-gray-800 rounded-lg p-2.5 text-center"><div class="text-xl">&#x1F4A7;</div><div class="text-white font-extrabold text-lg">${streaks.water}</div><div class="text-gray-500 text-[10px] uppercase font-bold">Day Water Streak</div></div>`;
+        html += `</div></div>`;
+    }
+
+    if (milestoneData.earned.length > 0) {
+        html += `<div class="card stagger"><div class="section-title">Milestones Earned</div><div class="flex flex-wrap gap-2">`;
+        milestoneData.earned.forEach(m => {
+            html += `<div class="bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2 text-center">
+                <div class="text-lg">${m.icon}</div>
+                <div class="text-amber-400 text-xs font-bold">${m.label}</div>
+            </div>`;
+        });
+        html += `</div>`;
+        if (milestoneData.next) {
+            html += `<div class="mt-3 text-xs text-gray-500">Next: <span class="text-gray-300">${milestoneData.next.icon} ${milestoneData.next.label}</span></div>`;
+        }
+        html += `</div>`;
+    }
+
     document.getElementById('dash-content').innerHTML = html;
     setTimeout(() => renderWeightChart(p, weightHist), 50);
+
+    // Fire celebration for newly earned milestones (only on today's view)
+    if (isViewingToday() && milestoneData.newlyEarned.length > 0) {
+        setTimeout(() => {
+            launchMilestoneCelebration(milestoneData.newlyEarned[0]);
+        }, 600);
+    }
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║                 9b. STREAKS & MILESTONES                    ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+async function computeStreaks(profile) {
+    const sched = getSchedule(profile);
+    const result = { shots: 0, protein: 0, workout: 0, water: 0 };
+    try {
+        const { data, error } = await sb.from('daily_logs').select('log_date, shots, protein, workout, water')
+            .eq('user_id', currentSession.user.id).order('log_date', { ascending: false }).limit(60);
+        if (error || !data || data.length === 0) return result;
+
+        const logs = data.sort((a, b) => b.log_date.localeCompare(a.log_date));
+        const today = todayStr();
+
+        // Helper: check consecutive days going backward from today
+        function countStreak(checkFn) {
+            let streak = 0;
+            for (let i = 0; i < 60; i++) {
+                const date = shiftDate(today, -i);
+                const log = logs.find(l => l.log_date === date);
+                const dow = new Date(date + 'T12:00:00').getDay();
+                if (checkFn(log, dow, date)) { streak++; }
+                else if (i === 0) { continue; } // today not yet completed is OK
+                else { break; }
+            }
+            return streak;
+        }
+
+        // Shot streak: all scheduled shots logged for that day (rest days with no shots = pass)
+        result.shots = countStreak((log, dow) => {
+            const scheduled = sched[dow]?.shots || [];
+            if (scheduled.length === 0) return true; // no shots due = doesn't break streak
+            if (!log || !log.shots) return false;
+            const shotObj = typeof log.shots === 'object' ? log.shots : {};
+            return scheduled.every(s => !!shotObj[s]);
+        });
+
+        // Protein streak: protein >= protein_min
+        result.protein = countStreak((log) => {
+            return log && log.protein && parseFloat(log.protein) >= (profile.protein_min || 0);
+        });
+
+        // Workout streak: workout.completed or rest day
+        result.workout = countStreak((log, dow) => {
+            const type = sched[dow]?.type;
+            if (type === 'rest' || type === 'recovery') return true;
+            return log && log.workout && log.workout.completed;
+        });
+
+        // Water streak: water >= water_target
+        result.water = countStreak((log) => {
+            return log && log.water && parseFloat(log.water) >= (profile.water_target || 0);
+        });
+    } catch (e) { console.error('Streak error:', e); }
+    return result;
+}
+
+function getMilestoneDefinitions(profile) {
+    const totalGoal = (profile.start_weight || 0) - (profile.goal_weight || 0);
+    const half = Math.round(totalGoal / 2);
+    const milestones = [];
+
+    // Weight milestones (only include thresholds that make sense for this user's goal)
+    [5, 10, 15, 20, 25, 30, 40, 50, 75].forEach(lbs => {
+        if (lbs <= totalGoal) milestones.push({ id: 'weight_' + lbs, type: 'weight', threshold: lbs, icon: '\u{2B50}', label: lbs + ' Lbs Down' });
+    });
+    if (half > 5 && !milestones.find(m => m.threshold === half)) {
+        milestones.push({ id: 'weight_half', type: 'weight', threshold: half, icon: '\u{1F3C5}', label: 'Halfway to ' + profile.goal_weight + 'lb!' });
+    }
+    milestones.push({ id: 'weight_goal', type: 'weight', threshold: totalGoal, icon: '\u{1F3C6}', label: 'GOAL: ' + profile.goal_weight + 'lb!' });
+
+    // Streak milestones
+    milestones.push({ id: 'streak_7', type: 'streak', threshold: 7, icon: '\u{1F525}', label: '7-Day Streak' });
+    milestones.push({ id: 'streak_14', type: 'streak', threshold: 14, icon: '\u{1F525}', label: '14-Day Streak' });
+    milestones.push({ id: 'streak_30', type: 'streak', threshold: 30, icon: '\u{1F4A5}', label: '30-Day Streak' });
+
+    // Program milestones
+    milestones.push({ id: 'week_1', type: 'program', threshold: 7, icon: '\u{1F4C5}', label: 'First Week Complete' });
+    milestones.push({ id: 'week_4', type: 'program', threshold: 28, icon: '\u{1F4C5}', label: 'One Month In' });
+
+    // Sort by threshold for display
+    return milestones;
+}
+
+function checkMilestones(profile, latestW, weightHist, streaks) {
+    const key = 'milestones_' + (currentSession?.user?.id || 'unknown');
+    const stored = JSON.parse(localStorage.getItem(key) || '{}');
+    const defs = getMilestoneDefinitions(profile);
+    const earned = [];
+    const newlyEarned = [];
+    let next = null;
+    const lostLbs = profile.start_weight && latestW ? profile.start_weight - latestW : 0;
+    const programDays = profile.program_start ? daysSince(profile.program_start) : 0;
+    const maxStreak = Math.max(streaks.shots, streaks.protein, streaks.workout, streaks.water);
+
+    defs.forEach(m => {
+        let met = false;
+        if (m.type === 'weight') met = lostLbs >= m.threshold;
+        else if (m.type === 'streak') met = maxStreak >= m.threshold;
+        else if (m.type === 'program') met = programDays >= m.threshold;
+
+        if (met) {
+            earned.push(m);
+            if (!stored[m.id]) {
+                stored[m.id] = todayStr();
+                newlyEarned.push(m);
+            }
+        } else if (!next) {
+            next = m;
+        }
+    });
+
+    localStorage.setItem(key, JSON.stringify(stored));
+    return { earned, newlyEarned, next };
+}
+
+function launchMilestoneCelebration(milestone) {
+    // Fireworks (reuse existing system)
+    const overlay = document.createElement('div');
+    overlay.className = 'celebration-overlay';
+    document.body.appendChild(overlay);
+
+    const colors = ['#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316'];
+    const cx = window.innerWidth / 2, cy = window.innerHeight * 0.4;
+
+    for (let burst = 0; burst < 4; burst++) {
+        const bx = cx + (Math.random() - 0.5) * 160;
+        const by = cy + (Math.random() - 0.5) * 100;
+        setTimeout(() => {
+            for (let i = 0; i < 22; i++) {
+                const spark = document.createElement('div');
+                spark.className = 'firework';
+                const angle = (i / 22) * Math.PI * 2;
+                const dist = 70 + Math.random() * 100;
+                spark.style.cssText = `left:${bx}px;top:${by}px;background:${colors[Math.floor(Math.random()*colors.length)]};--fx:${Math.cos(angle)*dist}px;--fy:${Math.sin(angle)*dist}px;width:${4+Math.random()*5}px;height:${4+Math.random()*5}px;`;
+                overlay.appendChild(spark);
+            }
+        }, burst * 180);
+    }
+
+    // Milestone sticker (larger than workout sticker)
+    const sticker = document.createElement('div');
+    sticker.className = 'sticker';
+    sticker.style.cssText = 'font-size:1.2rem;padding:1.25rem 2rem;';
+    sticker.innerHTML = `<div class="text-3xl mb-1">${milestone.icon}</div><div style="font-size:1rem;font-weight:800">${milestone.label}</div><div style="font-size:0.75rem;opacity:0.8;margin-top:4px">MILESTONE UNLOCKED</div>`;
+    document.body.appendChild(sticker);
+
+    setTimeout(() => { overlay.remove(); sticker.remove(); }, 3500);
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
