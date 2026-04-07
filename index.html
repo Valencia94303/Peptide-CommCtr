@@ -655,6 +655,56 @@ async function sharePen(id) {
     if (error) throw error;
 }
 
+async function estimatePenBurnRate(activePens) {
+    const alerts = [];
+    const LOW_DOSE_THRESHOLD = 3; // warn when <= 3 doses remain
+    try {
+        const profiles = await fetchAllProfiles();
+        for (const pen of activePens) {
+            if (daysSince(pen.filled_date) > 28) continue; // skip expired
+            // Find users who draw from this pen
+            const users = pen.shared ? profiles : profiles.filter(u => u.id === pen.assigned_to);
+            if (users.length === 0) continue;
+
+            let totalShotsUsed = 0;
+            for (const user of users) {
+                const doseMg = user.current_doses?.[pen.peptide];
+                if (!doseMg) continue;
+                // Count shots logged for this peptide since pen fill date
+                const { data } = await sb.from('daily_logs').select('shots')
+                    .eq('user_id', user.id)
+                    .gte('log_date', pen.filled_date)
+                    .not('shots', 'is', null);
+                if (data) {
+                    data.forEach(log => {
+                        if (log.shots && log.shots[pen.peptide]) totalShotsUsed++;
+                    });
+                }
+            }
+
+            // Estimate: figure out dose_mg from the primary assigned user
+            const primaryUser = users[0];
+            const doseMg = primaryUser.current_doses?.[pen.peptide];
+            if (!doseMg || pen.concentration <= 0) continue;
+
+            const mlPerDose = doseMg / pen.concentration;
+            const mlUsed = totalShotsUsed * mlPerDose;
+            const mlRemaining = Math.max(0, pen.total_ml - mlUsed);
+            const dosesLeft = Math.floor(mlRemaining / mlPerDose);
+
+            if (dosesLeft <= LOW_DOSE_THRESHOLD) {
+                const userName = profiles.find(u => u.id === pen.assigned_to)?.display_name || 'Shared';
+                alerts.push({
+                    peptide: pen.peptide,
+                    dosesLeft,
+                    detail: `${userName}'s pen: ~${mlRemaining.toFixed(1)}mL left of ${pen.total_ml}mL (${totalShotsUsed} shots used)`
+                });
+            }
+        }
+    } catch (e) { console.error('Burn rate error:', e); }
+    return alerts;
+}
+
 async function fetchPeptideTypes() {
     const { data, error } = await sb.from('peptide_types').select('*').order('name');
     if (error) throw error;
@@ -888,6 +938,14 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
                     <div class="font-bold text-red-400 text-sm">&#x26A0; ${pen.peptide} Pen EXPIRED &mdash; ${daysSince(pen.filled_date)} days old</div>
                 </div>`;
             }
+        });
+        // Reorder reminders based on estimated remaining doses
+        const penAlerts = await estimatePenBurnRate(pens);
+        penAlerts.forEach(alert => {
+            html += `<div class="bg-orange-900/40 border border-orange-600/50 rounded-xl p-3">
+                <div class="font-bold text-orange-400 text-sm">&#x1F4E6; ${alert.peptide} Pen &mdash; ~${alert.dosesLeft} dose${alert.dosesLeft===1?'':'s'} remaining</div>
+                <div class="text-orange-300/70 text-xs mt-0.5">${alert.detail}</div>
+            </div>`;
         });
     }
 
