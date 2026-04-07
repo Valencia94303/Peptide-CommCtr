@@ -185,6 +185,7 @@
             <div class="flex gap-2 items-center">
                 <button onclick="showSummaryModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 text-lg transition active:scale-90" title="Activity Summary">&#x1F4CA;</button>
                 <button onclick="showLeaderboardModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-blue-900/30 text-blue-400 text-lg transition active:scale-90" title="Household Leaderboard">&#x1F3C6;</button>
+                <button onclick="showScreen('messages')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-purple-900/30 text-purple-400 text-lg transition active:scale-90 relative" title="Household Messages" id="btn-messages">&#x1F4AC;<span id="msg-badge" class="hidden absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] text-white font-bold flex items-center justify-center"></span></button>
                 <button onclick="showNoGoModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-red-900/30 text-red-400 text-lg transition active:scale-90" title="No-Go Foods">&#x1F6AB;</button>
                 <button id="btn-lab" onclick="showScreen('lab')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-amber-900/30 text-amber-400 text-lg transition active:scale-90 hidden" title="Admin Lab">&#x2697;&#xFE0F;</button>
                 <button onclick="showScreen('settings')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-800 text-gray-400 text-lg transition active:scale-90" title="Settings">&#x2699;&#xFE0F;</button>
@@ -211,6 +212,22 @@
             <div class="w-8"></div>
         </div>
         <div id="workout-content" class="p-4 space-y-4 pb-8"></div>
+    </div>
+
+    <!-- ==================== MESSAGES SCREEN ==================== -->
+    <div id="screen-messages" class="hidden fade-in">
+        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
+            <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
+            <h2 class="text-lg font-bold text-amber-500">&#x1F4AC; Team Board</h2>
+            <div class="w-8"></div>
+        </div>
+        <div id="messages-list" class="p-4 space-y-2 pb-24" style="min-height:calc(100vh - 140px)"></div>
+        <div class="fixed bottom-0 left-0 right-0 glass-header border-t border-gray-800 p-3 z-40">
+            <div class="max-w-lg mx-auto flex gap-2">
+                <input type="text" id="msg-input" class="input-field flex-1" placeholder="Message the team..." maxlength="500" onkeydown="if(event.key==='Enter')sendMessage()">
+                <button onclick="sendMessage()" class="btn-primary px-5 py-3 text-sm" style="width:auto;min-height:auto">Send</button>
+            </div>
+        </div>
     </div>
 
     <!-- ==================== WEEKLY SHOTS SCREEN ==================== -->
@@ -792,7 +809,7 @@ function setBtnLoading(id, loading) {
 // ╚══════════════════════════════════════════════════════════════╝
 
 let lastScreen = 'auth';
-const screenOrder = ['auth','dashboard','lab','workout','shots','settings'];
+const screenOrder = ['auth','dashboard','messages','lab','workout','shots','settings'];
 
 function showScreen(name) {
     const fromIdx = screenOrder.indexOf(lastScreen);
@@ -817,6 +834,7 @@ function showScreen(name) {
     if (name === 'auth') renderAuthForm();
     if (name === 'dashboard') loadDashboard();
     if (name === 'lab') loadLab();
+    if (name === 'messages') loadMessages();
     if (name === 'workout') renderWorkoutPlan();
     if (name === 'shots') renderShotsSchedule();
     if (name === 'settings') loadSettings();
@@ -1786,6 +1804,118 @@ async function removeUserPeptide(userId, peptide) {
         await updateProfileField(userId, { peptide_type: updated.join(' + '), current_doses: doses });
         await loadLab(true);
     } catch(e){ alert(e.message); }
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              12b. HOUSEHOLD MESSAGES                        ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+let messagesChannel = null;
+let cachedProfiles = null;
+
+async function loadMessages() {
+    const list = document.getElementById('messages-list');
+    list.innerHTML = '<div class="flex items-center justify-center py-16"><div class="spinner"></div></div>';
+
+    try {
+        if (!cachedProfiles) cachedProfiles = await fetchAllProfiles();
+        const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending: true }).limit(100);
+        if (error) throw error;
+        renderMessages(data || []);
+        scrollMessagesToBottom();
+
+        // Subscribe to realtime
+        if (messagesChannel) sb.removeChannel(messagesChannel);
+        messagesChannel = sb.channel('messages-realtime')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+                appendMessage(payload.new);
+                scrollMessagesToBottom();
+            })
+            .subscribe();
+    } catch (e) {
+        list.innerHTML = `<div class="text-center py-12 text-gray-500"><div class="text-3xl mb-2">&#x1F4AC;</div>
+            <p class="text-sm">Message board not available yet.</p>
+            <p class="text-xs text-gray-600 mt-1">Run migration-005-messages.sql in Supabase.</p></div>`;
+    }
+}
+
+function renderMessages(messages) {
+    const list = document.getElementById('messages-list');
+    if (messages.length === 0) {
+        list.innerHTML = '<div class="text-center py-16 text-gray-600"><div class="text-3xl mb-2">&#x1F4AC;</div><p class="text-sm">No messages yet. Start the conversation!</p></div>';
+        return;
+    }
+    list.innerHTML = '';
+    let lastDate = '';
+    messages.forEach(msg => {
+        const msgDate = msg.created_at.split('T')[0];
+        if (msgDate !== lastDate) {
+            lastDate = msgDate;
+            list.innerHTML += `<div class="text-center text-[10px] text-gray-600 font-bold py-2">${formatDate(msgDate)}</div>`;
+        }
+        list.innerHTML += renderMessageBubble(msg);
+    });
+}
+
+function renderMessageBubble(msg) {
+    const isMe = msg.user_id === currentSession?.user?.id;
+    const user = (cachedProfiles || []).find(u => u.id === msg.user_id);
+    const name = user?.display_name || '?';
+    const initial = name[0].toUpperCase();
+    const time = new Date(msg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+    if (isMe) {
+        return `<div class="flex justify-end gap-2 mb-1">
+            <div class="max-w-[80%]">
+                <div class="bg-amber-900/30 border border-amber-800/40 rounded-2xl rounded-br-md px-3 py-2">
+                    <div class="text-gray-100 text-sm">${escapeHtml(msg.text)}</div>
+                </div>
+                <div class="text-[10px] text-gray-600 text-right mt-0.5">${time}</div>
+            </div>
+        </div>`;
+    }
+    return `<div class="flex gap-2 mb-1">
+        <div class="w-7 h-7 bg-gradient-to-br from-gray-600 to-gray-700 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">${initial}</div>
+        <div class="max-w-[80%]">
+            <div class="text-[10px] text-gray-500 font-bold mb-0.5">${escapeHtml(name)}</div>
+            <div class="bg-gray-800 border border-gray-700 rounded-2xl rounded-bl-md px-3 py-2">
+                <div class="text-gray-200 text-sm">${escapeHtml(msg.text)}</div>
+            </div>
+            <div class="text-[10px] text-gray-600 mt-0.5">${time}</div>
+        </div>
+    </div>`;
+}
+
+function appendMessage(msg) {
+    const list = document.getElementById('messages-list');
+    // Remove empty state if present
+    if (list.querySelector('.text-center')) {
+        const empties = list.querySelectorAll('.text-center');
+        if (empties.length === 1 && list.children.length === 1) list.innerHTML = '';
+    }
+    list.innerHTML += renderMessageBubble(msg);
+}
+
+function scrollMessagesToBottom() {
+    setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 100);
+}
+
+async function sendMessage() {
+    const input = document.getElementById('msg-input');
+    const text = (input.value || '').trim();
+    if (!text || !currentSession) return;
+    input.value = '';
+    try {
+        const { error } = await sb.from('messages').insert({
+            user_id: currentSession.user.id,
+            text: text
+        });
+        if (error) throw error;
+    } catch (e) { alert('Send error: ' + e.message); input.value = text; }
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
