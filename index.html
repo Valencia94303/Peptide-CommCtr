@@ -877,7 +877,125 @@ function renderAuthForm() {
         <button id="auth-btn" onclick="${isSignUp ? 'handleSignUp()' : 'handleSignIn()'}" class="btn-primary">${isSignUp ? 'Create Account' : 'Sign In'}</button>
         <button onclick="authMode='${isSignUp ? 'login' : 'signup'}';renderAuthForm()" class="w-full text-center text-sm text-gray-500 hover:text-amber-400 transition py-2">
             ${isSignUp ? 'Already have an account? Sign In' : 'New user? Create Account'}
-        </button>`;
+        </button>
+        ${!isSignUp && hasBiometricCredential() ? '<div class="border-t border-gray-800 pt-4 mt-2"><button onclick="biometricSignIn()" class="btn-secondary w-full flex items-center justify-center gap-2"><span class="text-xl">&#x1F91A;</span> Sign in with Face ID / Touch ID</button></div>' : ''}`;
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              8b. BIOMETRIC LOGIN (WebAuthn)                 ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+function hasBiometricCredential() {
+    if (!window.PublicKeyCredential) return false;
+    // Check if any user has registered biometric
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('bio_cred_')) return true;
+    }
+    return false;
+}
+
+async function enableBiometric() {
+    if (!window.PublicKeyCredential) { alert('Biometric login is not supported on this device.'); return; }
+    try {
+        const userId = currentSession.user.id;
+        const userEmail = currentSession.user.email;
+        const userName = currentProfile?.display_name || userEmail;
+
+        // Create a credential using the platform authenticator (Face ID / Touch ID)
+        const credential = await navigator.credentials.create({
+            publicKey: {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                rp: { name: 'Peptide Command Center', id: window.location.hostname },
+                user: {
+                    id: new TextEncoder().encode(userId),
+                    name: userEmail,
+                    displayName: userName
+                },
+                pubKeyCredParams: [
+                    { alg: -7, type: 'public-key' },   // ES256
+                    { alg: -257, type: 'public-key' }   // RS256
+                ],
+                authenticatorSelection: {
+                    authenticatorAttachment: 'platform',
+                    userVerification: 'required',
+                    residentKey: 'preferred'
+                },
+                timeout: 60000
+            }
+        });
+
+        if (credential) {
+            // Store the credential ID and refresh token
+            const credId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+            const { data: { session } } = await sb.auth.getSession();
+            localStorage.setItem('bio_cred_' + userId, JSON.stringify({
+                credentialId: credId,
+                refreshToken: session.refresh_token,
+                email: userEmail,
+                name: userName
+            }));
+            alert('Biometric login enabled! You can now use Face ID / Touch ID to sign in.');
+            loadSettings();
+        }
+    } catch (e) {
+        if (e.name !== 'NotAllowedError') alert('Error: ' + e.message);
+    }
+}
+
+function disableBiometric() {
+    localStorage.removeItem('bio_cred_' + currentSession.user.id);
+    loadSettings();
+}
+
+async function biometricSignIn() {
+    try {
+        // Find stored credentials
+        let stored = null;
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.startsWith('bio_cred_')) {
+                stored = JSON.parse(localStorage.getItem(key));
+                break;
+            }
+        }
+        if (!stored) { alert('No biometric credential found. Sign in with password first, then enable biometric in Settings.'); return; }
+
+        const credIdBytes = Uint8Array.from(atob(stored.credentialId), c => c.charCodeAt(0));
+
+        // Verify the user with biometric
+        const assertion = await navigator.credentials.get({
+            publicKey: {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                allowCredentials: [{ id: credIdBytes, type: 'public-key', transports: ['internal'] }],
+                userVerification: 'required',
+                timeout: 60000
+            }
+        });
+
+        if (assertion) {
+            // Restore session using refresh token
+            const { data, error } = await sb.auth.refreshSession({ refresh_token: stored.refreshToken });
+            if (error) {
+                // Refresh token expired — clear and ask for password
+                alert('Session expired. Please sign in with your password, then re-enable biometric.');
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith('bio_cred_')) localStorage.removeItem(key);
+                }
+                return;
+            }
+            // Update stored refresh token for next time
+            if (data.session) {
+                const key = 'bio_cred_' + data.session.user.id;
+                const current = JSON.parse(localStorage.getItem(key) || '{}');
+                current.refreshToken = data.session.refresh_token;
+                localStorage.setItem(key, JSON.stringify(current));
+            }
+        }
+    } catch (e) {
+        if (e.name !== 'NotAllowedError') alert('Biometric error: ' + e.message);
+    }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
@@ -2451,6 +2569,17 @@ function renderSettings(recentLogs, allProfiles, todayLogs) {
                 </div></div>`;
         });
         html += '</div>';
+    }
+
+    // Biometric Login
+    if (window.PublicKeyCredential) {
+        const bioEnabled = localStorage.getItem('bio_cred_' + currentSession.user.id);
+        html += `<div class="card"><div class="section-title">Biometric Login</div>
+            <p class="text-xs text-gray-500 mb-3">Use Face ID or Touch ID to sign in without typing your password.</p>
+            ${bioEnabled
+                ? '<div class="flex items-center gap-2 mb-3"><span class="text-emerald-400 text-sm">&#x2705; Enabled</span></div><button onclick="disableBiometric()" class="btn-secondary">Disable Biometric Login</button>'
+                : '<button onclick="enableBiometric()" class="btn-primary">Enable Face ID / Touch ID</button>'
+            }</div>`;
     }
 
     // Help & Guide
