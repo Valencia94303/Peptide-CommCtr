@@ -488,6 +488,33 @@ function getBaseSchedule(profile) {
     return GENERIC_SCHEDULE;
 }
 
+// Returns the effective injection window ('morning' | 'evening') for a peptide
+// for a given user. Order of resolution:
+//   1) user override via profile.peptide_window_overrides[peptide]
+//   2) peptide_types.default_window (from cachedPeptideTypes)
+//   3) fallback to 'morning'
+function getPeptideWindow(profile, peptide) {
+    const overrides = (profile && profile.peptide_window_overrides) || {};
+    const own = overrides[peptide];
+    if (own === 'morning' || own === 'evening') return own;
+    const type = (cachedPeptideTypes || []).find(t => t && t.name === peptide);
+    if (type && (type.default_window === 'morning' || type.default_window === 'evening')) {
+        return type.default_window;
+    }
+    return 'morning';
+}
+
+// Buckets a list of peptide names into { morning: [...], evening: [...] }
+// using each peptide's effective window for the given profile.
+function groupShotsByWindow(profile, shots) {
+    const out = { morning: [], evening: [] };
+    (shots || []).forEach(name => {
+        const w = getPeptideWindow(profile, name);
+        (out[w] || out.morning).push(name);
+    });
+    return out;
+}
+
 // True if a peptide is in its "on" phase relative to the user's cycle config.
 // If no cycle is configured for the peptide, it's always on.
 function isPeptideOnCycle(profile, peptide, referenceDate) {
@@ -857,8 +884,16 @@ async function fetchPeptideTypes() {
     return cachedPeptideTypes;
 }
 
-async function insertPeptideType(name, vialSize) {
-    const { error } = await sb.from('peptide_types').insert({ name, vial_size: vialSize });
+async function insertPeptideType(name, vialSize, defaultWindow) {
+    const payload = { name, vial_size: vialSize };
+    if (defaultWindow === 'morning' || defaultWindow === 'evening') payload.default_window = defaultWindow;
+    const { error } = await sb.from('peptide_types').insert(payload);
+    if (error) throw error;
+}
+
+async function updatePeptideTypeWindow(id, window) {
+    const w = (window === 'evening') ? 'evening' : 'morning';
+    const { error } = await sb.from('peptide_types').update({ default_window: w }).eq('id', id);
     if (error) throw error;
 }
 
@@ -1155,7 +1190,10 @@ async function loadDashboard() {
     showLoading('dash-content');
     try {
         const [log, pens, masters, weightHist, rate, latestW, firstGLP1] = await Promise.all([
-            ensureTodayLog(), fetchMyActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight(), fetchFirstGLP1ShotDate()
+            ensureTodayLog(), fetchMyActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight(), fetchFirstGLP1ShotDate(),
+            // getPeptideWindow() reads cachedPeptideTypes, so make sure it's populated
+            // before renderDashboard groups today's shots into AM/PM blocks.
+            fetchPeptideTypes()
         ]);
         await renderDashboard(p, log, pens, masters, weightHist, rate, latestW, firstGLP1);
     } catch (e) {
@@ -1263,17 +1301,32 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
     }
 
     // === TODAY'S PROTOCOL ===
-    const isMorning = todaySched.window === 'morning';
-    const windowLabel = isMorning ? '&#x1F305; Morning Fasted' : '&#x1F319; Evening Bedtime';
-    const windowGradient = isMorning ? 'from-blue-900/40 to-blue-950/20' : 'from-purple-900/40 to-purple-950/20';
-    const windowBorder = isMorning ? 'border-blue-800/30' : 'border-purple-800/30';
-    const windowTextColor = isMorning ? 'text-blue-400' : 'text-purple-400';
+    // Day-level `window` now controls only the workout/fasting context block.
+    // Each shot resolves its own window via getPeptideWindow() so a single day
+    // can mix AM (e.g. Semax fasted) with PM (e.g. Diamond Glow bedtime).
+    const workoutIsMorning = todaySched.window === 'morning';
+    const grouped = groupShotsByWindow(p, todaySched.shots || []);
+    const hasAM = grouped.morning.length > 0;
+    const hasPM = grouped.evening.length > 0;
+    const hasShots = hasAM || hasPM;
+    const headerLabel = (hasAM && hasPM)
+        ? '&#x1F305; Morning &bull; &#x1F319; Evening'
+        : hasAM ? '&#x1F305; Morning Fasted'
+        : hasPM ? '&#x1F319; Evening Bedtime'
+        : (workoutIsMorning ? '&#x1F305; Morning' : '&#x1F319; Evening');
+    const headerColor = (hasAM && hasPM) ? 'text-amber-400'
+        : hasAM ? 'text-blue-400'
+        : 'text-purple-400';
+
     html += `<div class="card card-glow card-breathe stagger">
         <div class="flex items-center justify-between mb-3">
             <div class="section-title mb-0">${DAYS[activeDayOfWeek()]}'s Protocol</div>
-            <div class="text-xs font-bold ${windowTextColor} bg-gray-800/80 px-2.5 py-1 rounded-full">${windowLabel}</div>
-        </div>
-        <div class="bg-gradient-to-r ${windowGradient} border ${windowBorder} rounded-xl p-3 mb-3">
+            <div class="text-xs font-bold ${headerColor} bg-gray-800/80 px-2.5 py-1 rounded-full">${headerLabel}</div>
+        </div>`;
+
+    const wGradient = workoutIsMorning ? 'from-blue-900/40 to-blue-950/20' : 'from-purple-900/40 to-purple-950/20';
+    const wBorder = workoutIsMorning ? 'border-blue-800/30' : 'border-purple-800/30';
+    html += `<div class="bg-gradient-to-r ${wGradient} border ${wBorder} rounded-xl p-3 mb-3">
             <div class="flex items-center gap-3">
                 <div class="w-11 h-11 rounded-xl flex items-center justify-center text-xl ${todaySched.type==='rest'||todaySched.type==='recovery'?'bg-gray-800/80':'bg-white/10'}">
                     ${todaySched.type==='rest'||todaySched.type==='recovery'?'&#x1F9D8;':todaySched.type==='training'||todaySched.type==='treadmill'?'&#x1F4AA;':todaySched.type==='walk'?'&#x1F6B6;':'&#x2728;'}
@@ -1285,43 +1338,48 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
             </div>
         </div>`;
 
-    // Render each peptide shot independently
-    const todayShots = todaySched.shots || [];
-    if (todayShots.length > 0) {
-        todayShots.forEach(peptide => {
-            const shotLog = log.shots || {};
-            const meta = getShotMeta(shotLog[peptide]);
-            const logged = !!meta;
+    const renderShotButton = (peptide) => {
+        const shotLog = log.shots || {};
+        const meta = getShotMeta(shotLog[peptide]);
+        const logged = !!meta;
+        const pen = pens.find(pe => pe.peptide === peptide);
+        const dose = p.current_doses ? p.current_doses[peptide] : null;
+        const plannedUnits = (pen && dose) ? calcUnitsFromConc(dose, pen.concentration) : null;
+        const loggedMg = meta && meta.mg != null ? meta.mg : null;
+        const loggedUnits = meta && meta.units != null ? meta.units : null;
+        const pillText = logged
+            ? (loggedMg != null && loggedUnits != null ? loggedMg + 'mg • ' + loggedUnits + 'u'
+                : loggedUnits != null ? loggedUnits + 'u'
+                : loggedMg != null ? loggedMg + 'mg'
+                : '&#x2705;')
+            : (plannedUnits ? plannedUnits + 'u' : null);
+        let out = `<div class="mb-2">
+            <button onclick="logShot('${peptide}')" class="btn-shot ${logged ? 'btn-shot-done check-pop shot-ripple' : 'btn-shot-pending'}">
+                <span class="text-xl">${logged ? '&#x2705;' : '&#x1F489;'}</span>
+                <span class="flex-1 text-left">${logged ? peptide + ' Logged' : 'Log ' + peptide}</span>
+                ${pillText ? '<span class="dose-pill text-amber-400 font-extrabold text-sm">'+pillText+'</span>' : ''}
+            </button>`;
+        if (pen && dose) {
+            const age = daysSince(pen.filled_date), expiring = age >= 25, expired = age > 28;
+            if (expired) out += '<div class="text-red-400 text-xs font-bold mt-1 ml-1 expiry-pulse">PEN EXPIRED ('+age+'d) \u2014 REFILL</div>';
+            else if (expiring) out += '<div class="text-yellow-400 text-xs mt-1 ml-1">Pen expires in '+(28-age)+'d</div>';
+        } else if (dose) {
+            out += '<div class="text-gray-600 text-xs mt-1 ml-1">No pen assigned \u2014 see Admin Lab</div>';
+        }
+        out += '</div>';
+        return out;
+    };
 
-            // Shot button + dosing in one row
-            const pen = pens.find(pe => pe.peptide === peptide);
-            const dose = p.current_doses ? p.current_doses[peptide] : null;
-            const plannedUnits = (pen && dose) ? calcUnitsFromConc(dose, pen.concentration) : null;
-            const loggedMg = meta && meta.mg != null ? meta.mg : null;
-            const loggedUnits = meta && meta.units != null ? meta.units : null;
-            const pillText = logged
-                ? (loggedMg != null && loggedUnits != null ? loggedMg + 'mg • ' + loggedUnits + 'u'
-                    : loggedUnits != null ? loggedUnits + 'u'
-                    : loggedMg != null ? loggedMg + 'mg'
-                    : '&#x2705;')
-                : (plannedUnits ? plannedUnits + 'u' : null);
-
-            html += `<div class="mb-2">
-                <button onclick="logShot('${peptide}')" class="btn-shot ${logged ? 'btn-shot-done check-pop shot-ripple' : 'btn-shot-pending'}">
-                    <span class="text-xl">${logged ? '&#x2705;' : '&#x1F489;'}</span>
-                    <span class="flex-1 text-left">${logged ? peptide + ' Logged' : 'Log ' + peptide}</span>
-                    ${pillText ? '<span class="dose-pill text-amber-400 font-extrabold text-sm">'+pillText+'</span>' : ''}
-                </button>`;
-
-            if (pen && dose) {
-                const age = daysSince(pen.filled_date), expiring = age >= 25, expired = age > 28;
-                if (expired) html += '<div class="text-red-400 text-xs font-bold mt-1 ml-1 expiry-pulse">PEN EXPIRED ('+age+'d) \u2014 REFILL</div>';
-                else if (expiring) html += '<div class="text-yellow-400 text-xs mt-1 ml-1">Pen expires in '+(28-age)+'d</div>';
-            } else if (dose) {
-                html += '<div class="text-gray-600 text-xs mt-1 ml-1">No pen assigned \u2014 see Admin Lab</div>';
-            }
-            html += '</div>';
-        });
+    if (hasShots) {
+        const showLabels = hasAM && hasPM;
+        if (hasAM) {
+            if (showLabels) html += `<div class="text-[10px] font-bold text-blue-400 uppercase tracking-[0.12em] mb-2 mt-1">&#x1F305; Morning &mdash; fasted</div>`;
+            grouped.morning.forEach(pep => { html += renderShotButton(pep); });
+        }
+        if (hasPM) {
+            if (showLabels) html += `<div class="text-[10px] font-bold text-purple-400 uppercase tracking-[0.12em] mt-3 mb-2">&#x1F319; Evening &mdash; bedtime</div>`;
+            grouped.evening.forEach(pep => { html += renderShotButton(pep); });
+        }
     } else {
         html += '<div class="text-center py-4"><div class="text-2xl mb-1">&#x1F9D8;</div><div class="text-gray-500 text-sm">No shots today \u2014 recovery focus</div></div>';
     }
@@ -2106,6 +2164,7 @@ function renderLabPeople(profiles, pens, types) {
                     <div class="text-xs font-bold text-amber-400 uppercase tracking-wider">&#x1F48A; Current Doses</div>
                 </div>`;
             const doses = u.current_doses || {};
+            const wOverrides = u.peptide_window_overrides || {};
             const available = types.filter(t => !stack.includes(t.name));
             if (stack.length === 0) {
                 html += `<div class="text-xs text-gray-600 italic mb-2">No peptides in stack &mdash; add one below.</div>`;
@@ -2115,12 +2174,24 @@ function renderLabPeople(profiles, pens, types) {
                     const mg = doses[pep] || '';
                     const pen = pens.find(p => p.peptide === pep);
                     const preview = (pen && mg) ? calcUnitsFromConc(mg, pen.concentration)+' units @ '+pen.concentration+' mg/mL' : '';
-                    html += `<div class="flex items-center gap-2 bg-gray-900/60 rounded-lg p-2">
-                        <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
-                        <span class="text-xs text-gray-300 font-medium w-24 shrink-0 truncate">${pep}</span>
-                        <input type="number" inputmode="decimal" step="0.25" class="input-field text-sm py-1.5" style="max-width:80px" value="${mg}" placeholder="mg" onchange="updateUserDose('${u.id}','${pep}',this.value)">
-                        <span class="text-[10px] text-gray-500">mg</span>
-                        ${preview?`<span class="text-[10px] text-amber-400 font-bold ml-auto truncate">${preview}</span>`:'<span class="text-[10px] text-gray-600 ml-auto">no pen</span>'}
+                    const w = getPeptideWindow(u, pep);
+                    const overridden = (wOverrides[pep] === 'morning' || wOverrides[pep] === 'evening');
+                    const safePep = pep.replace(/'/g, "\\'");
+                    html += `<div class="bg-gray-900/60 rounded-lg p-2">
+                        <div class="flex items-center gap-2 mb-1.5">
+                            <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
+                            <span class="text-xs text-gray-200 font-semibold flex-1 truncate">${pep}</span>
+                            <select class="text-[10px] py-0.5 px-1.5 bg-gray-800 border border-gray-700 rounded ${overridden ? 'text-amber-400 font-bold' : 'text-gray-400'}" onchange="setUserPeptideWindow('${u.id}','${safePep}',this.value)" title="When this peptide is taken. 'Default' falls back to the peptide type's global setting.">
+                                <option value="" ${overridden?'':'selected'}>${w === 'morning' ? '&#x1F305; AM (default)' : '&#x1F319; PM (default)'}</option>
+                                <option value="morning" ${wOverrides[pep]==='morning'?'selected':''}>&#x1F305; AM</option>
+                                <option value="evening" ${wOverrides[pep]==='evening'?'selected':''}>&#x1F319; PM</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="number" inputmode="decimal" step="0.25" class="input-field text-sm py-1.5" style="max-width:90px" value="${mg}" placeholder="mg" onchange="updateUserDose('${u.id}','${pep}',this.value)">
+                            <span class="text-[10px] text-gray-500">mg</span>
+                            ${preview?`<span class="text-[10px] text-amber-400 font-bold ml-auto truncate">${preview}</span>`:'<span class="text-[10px] text-gray-600 ml-auto">no pen</span>'}
+                        </div>
                     </div>`;
                 });
                 html += `</div>`;
@@ -2141,30 +2212,48 @@ function renderLabPeople(profiles, pens, types) {
                     ${hasOverride ? `<button onclick="resetUserSchedule('${u.id}')" class="text-[10px] text-gray-400 hover:text-red-400 bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded transition">Reset to default</button>` : '<span class="text-[10px] text-gray-600 uppercase tracking-wide">Defaults</span>'}
                 </div>
                 <div class="space-y-1.5">`;
+            // Partition the user's stack by each peptide's effective window so
+            // chips render under the right AM/PM row for each day. A day can
+            // have shots in one or both windows independently.
+            const stackByWindow = { morning: [], evening: [] };
+            stack.forEach(pep => {
+                const w = getPeptideWindow(u, pep);
+                (stackByWindow[w] || stackByWindow.morning).push(pep);
+            });
             const effective = getSchedule(u);
             for (let d = 0; d < 7; d++) {
                 const day = effective[d] || { window: 'morning', shots: [] };
                 const overridden = !!(override[d] || override[String(d)]);
                 const shots = day.shots || [];
+                const workoutAM = day.window === 'morning';
                 html += `<div class="rounded-lg p-2 ${overridden ? 'bg-amber-950/30 border border-amber-800/40' : 'bg-gray-900/60 border border-gray-800'}">
                     <div class="flex items-center gap-2 mb-1.5">
                         <span class="text-xs font-bold text-gray-300 w-9">${DAYS_SHORT[d]}</span>
-                        <select class="input-field text-xs py-1.5 flex-1" onchange="updateUserScheduleWindow('${u.id}',${d},this.value)">
-                            <option value="morning" ${day.window==='morning'?'selected':''}>&#x1F305; Morning</option>
-                            <option value="evening" ${day.window==='evening'?'selected':''}>&#x1F319; Evening</option>
+                        <span class="text-[10px] text-gray-500 uppercase tracking-wide">Workout</span>
+                        <select class="input-field text-xs py-1 flex-1" onchange="updateUserScheduleWindow('${u.id}',${d},this.value)" title="When the day's workout happens. Shot times come from each peptide.">
+                            <option value="morning" ${workoutAM?'selected':''}>&#x1F305; Morning</option>
+                            <option value="evening" ${workoutAM?'':'selected'}>&#x1F319; Evening</option>
                         </select>
-                    </div>
-                    <div class="flex flex-wrap gap-1.5">`;
+                    </div>`;
                 if (stack.length === 0) {
-                    html += `<span class="text-[11px] text-gray-600">Add a peptide above first.</span>`;
+                    html += `<div class="text-[11px] text-gray-600 px-1">Add a peptide above first.</div>`;
                 } else {
-                    stack.forEach(pep => {
-                        const active = shots.includes(pep);
-                        const safe = pep.replace(/'/g, "\\'");
-                        html += `<button onclick="toggleUserScheduleShot('${u.id}',${d},'${safe}')" class="text-[11px] px-2 py-1 rounded-full transition ${active ? 'bg-amber-600 hover:bg-amber-500 text-white font-bold' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}">${pep}</button>`;
-                    });
+                    const renderChipRow = (label, color, peps) => {
+                        if (peps.length === 0) return '';
+                        let row = `<div class="flex items-center gap-1.5 flex-wrap mt-1">
+                            <span class="text-[10px] font-bold ${color} w-10 shrink-0">${label}</span>`;
+                        peps.forEach(pep => {
+                            const active = shots.includes(pep);
+                            const safe = pep.replace(/'/g, "\\'");
+                            row += `<button onclick="toggleUserScheduleShot('${u.id}',${d},'${safe}')" class="text-[11px] px-2 py-1 rounded-full transition ${active ? 'bg-amber-600 hover:bg-amber-500 text-white font-bold' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}">${pep}</button>`;
+                        });
+                        row += `</div>`;
+                        return row;
+                    };
+                    html += renderChipRow('&#x1F305; AM', 'text-blue-400', stackByWindow.morning);
+                    html += renderChipRow('&#x1F319; PM', 'text-purple-400', stackByWindow.evening);
                 }
-                html += `</div></div>`;
+                html += `</div>`;
             }
             html += `</div></div>`;
 
@@ -2271,22 +2360,34 @@ function renderLabInventory(inv, types) {
 
     // === MANAGE PEPTIDES ===
     html += `<div class="card"><div class="section-title">Manage Peptide Types</div>
-        <p class="text-xs text-gray-500 mb-3">Add or remove peptide types available across the app.</p>`;
+        <p class="text-xs text-gray-500 mb-3">Set each peptide's default time-of-day. Individual users can override their own copy in the People tab.</p>`;
     if (types.length === 0) {
         html += labEmptyState('&#x1F4DD;', 'No peptide types yet', 'Add your first peptide type using the form below.');
     } else {
         html += `<div class="space-y-2 mb-3">`;
         types.forEach(t => {
-            html += `<div class="flex items-center justify-between bg-gray-800 rounded-lg p-3"><div>
-                <span class="text-sm text-gray-200 font-medium">${t.name}</span>
-                <span class="text-xs text-gray-500 ml-2">Vial: ${t.vial_size}</span></div>
-                <button onclick="removePeptideType('${t.id}','${t.name}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&times;</button></div>`;
+            const w = (t.default_window === 'evening') ? 'evening' : 'morning';
+            html += `<div class="flex items-center gap-2 bg-gray-800 rounded-lg p-3">
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm text-gray-200 font-medium truncate">${t.name}</div>
+                    <div class="text-xs text-gray-500">Vial: ${t.vial_size}</div>
+                </div>
+                <select class="text-[11px] py-1 px-2 bg-gray-900 border border-gray-700 rounded text-gray-300" onchange="setPeptideTypeWindow('${t.id}', this.value)" title="Default time-of-day for this peptide. Users can override per-person.">
+                    <option value="morning" ${w==='morning'?'selected':''}>&#x1F305; AM</option>
+                    <option value="evening" ${w==='evening'?'selected':''}>&#x1F319; PM</option>
+                </select>
+                <button onclick="removePeptideType('${t.id}','${t.name}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&times;</button>
+            </div>`;
         });
         html += `</div>`;
     }
     html += `<div class="flex gap-2">
         <input type="text" class="input-field text-sm py-2 flex-1" id="new-pep-name" placeholder="Peptide name">
         <input type="text" class="input-field text-sm py-2" style="max-width:80px" id="new-pep-size" placeholder="e.g. 10mg">
+        <select class="input-field text-sm py-2" style="max-width:90px" id="new-pep-window">
+            <option value="morning">&#x1F305; AM</option>
+            <option value="evening">&#x1F319; PM</option>
+        </select>
         <button onclick="addPeptideType()" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition active:scale-95 shrink-0">Add</button>
     </div></div>`;
 
@@ -2463,11 +2564,38 @@ async function changeInventory(id, newCount) {
 
 async function addPeptideType() {
     const name=document.getElementById('new-pep-name').value.trim(), size=document.getElementById('new-pep-size').value.trim();
+    const window = (document.getElementById('new-pep-window')?.value) || 'morning';
     if(!name||!size){ alert('Enter name and vial size.'); return; }
     try {
-        await insertPeptideType(name, size);
+        await insertPeptideType(name, size, window);
         await upsertInventoryItem(name+' '+size, 0);
         await loadLab(true);
+    } catch(e){ alert(e.message); }
+}
+
+// Update the global default window for a peptide type (applies to every user
+// unless they have a per-user override).
+async function setPeptideTypeWindow(id, window) {
+    try {
+        await updatePeptideTypeWindow(id, window);
+        await loadLab(true);
+        await loadDashboard();
+    } catch(e){ alert(e.message); }
+}
+
+// Override the window for a single user, leaving the global default untouched.
+// Pass '' (empty string) to clear the override and fall back to the type default.
+async function setUserPeptideWindow(userId, peptide, window) {
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if (!user) return;
+        const overrides = { ...(user.peptide_window_overrides || {}) };
+        if (window === 'morning' || window === 'evening') overrides[peptide] = window;
+        else delete overrides[peptide];
+        await updateProfileField(userId, { peptide_window_overrides: overrides });
+        await loadLab(true);
+        if (userId === currentSession.user.id) await loadDashboard();
     } catch(e){ alert(e.message); }
 }
 
@@ -2927,6 +3055,9 @@ function renderWorkoutPlan() {
 async function renderShotsSchedule() {
     if (!currentProfile) return;
     const p = currentProfile;
+    // Make sure peptide types (incl. default_window) are cached before
+    // we group shots into AM/PM rows.
+    try { await fetchPeptideTypes(); } catch (e) { /* non-fatal */ }
     const sched = getSchedule(p);
     const doses = p.current_doses || {};
 
@@ -2970,12 +3101,25 @@ async function renderShotsSchedule() {
         const dayDate = shiftDate(sunday, d);
         const isToday = d === todayDow;
         const isPast = dayDate < today;
-        const isMorning = day.window === 'morning';
-        const icon = isMorning ? '&#x1F305;' : '&#x1F319;';
-        const windowLabel = isMorning ? 'Morning (Fasted)' : 'Evening (Bedtime)';
         const shots = day.shots || [];
         const hasShots = shots.length > 0;
+        const grouped = groupShotsByWindow(p, shots);
+        const dHasAM = grouped.morning.length > 0;
+        const dHasPM = grouped.evening.length > 0;
         const dayLog = logByDow[d];
+        let chipIcon, chipLabel, chipColor;
+        if (dHasAM && dHasPM) {
+            chipIcon = '&#x1F305;&#x1F319;'; chipLabel = 'AM + PM'; chipColor = 'text-amber-400';
+        } else if (dHasAM) {
+            chipIcon = '&#x1F305;'; chipLabel = 'Morning (Fasted)'; chipColor = 'text-blue-400';
+        } else if (dHasPM) {
+            chipIcon = '&#x1F319;'; chipLabel = 'Evening (Bedtime)'; chipColor = 'text-purple-400';
+        } else {
+            const isMorning = day.window === 'morning';
+            chipIcon = isMorning ? '&#x1F305;' : '&#x1F319;';
+            chipLabel = isMorning ? 'Morning' : 'Evening';
+            chipColor = isMorning ? 'text-blue-400' : 'text-purple-400';
+        }
 
         html += `<div class="rounded-xl p-3 ${isToday ? 'bg-amber-900/20 border border-amber-700' : 'bg-gray-800/60 border border-gray-700/50'}">
             <div class="flex items-center justify-between mb-1.5">
@@ -2985,29 +3129,40 @@ async function renderShotsSchedule() {
                     ${isToday ? '<span class="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">TODAY</span>' : ''}
                 </div>
                 <div class="flex items-center gap-1.5 text-xs">
-                    <span>${icon}</span>
-                    <span class="${isMorning ? 'text-blue-400' : 'text-purple-400'} font-medium">${windowLabel}</span>
+                    <span>${chipIcon}</span>
+                    <span class="${chipColor} font-medium">${chipLabel}</span>
                 </div>
             </div>`;
 
+        const renderRow = (peptide, idx, totalIdx) => {
+            const planned = doses[peptide];
+            const meta = getShotMeta(dayLog?.shots?.[peptide]);
+            const logged = !!meta;
+            const amountText = logged
+                ? (meta.mg != null && meta.units != null ? meta.mg + 'mg • ' + meta.units + 'u'
+                    : meta.mg != null ? meta.mg + 'mg'
+                    : meta.units != null ? meta.units + 'u'
+                    : 'logged')
+                : (planned ? planned + 'mg planned' : '');
+            const safe = peptide.replace(/'/g, "\\'");
+            return `<div class="flex items-center gap-2 py-1.5 ${totalIdx > 0 ? 'border-t border-gray-700/40' : ''}" onclick="showPeptideHistory('${safe}')" style="cursor:pointer">
+                <span class="text-sm">${logged ? '&#x2705;' : (isPast ? '&#x274C;' : '&#x1F489;')}</span>
+                <span class="text-gray-100 font-medium text-sm flex-1">${peptide}</span>
+                <span class="${logged ? 'text-emerald-400' : 'text-amber-400'} font-bold text-xs">${amountText}</span>
+            </div>`;
+        };
+
         if (hasShots) {
-            shots.forEach((peptide, idx) => {
-                const planned = doses[peptide];
-                const meta = getShotMeta(dayLog?.shots?.[peptide]);
-                const logged = !!meta;
-                const amountText = logged
-                    ? (meta.mg != null && meta.units != null ? meta.mg + 'mg • ' + meta.units + 'u'
-                        : meta.mg != null ? meta.mg + 'mg'
-                        : meta.units != null ? meta.units + 'u'
-                        : 'logged')
-                    : (planned ? planned + 'mg planned' : '');
-                const safe = peptide.replace(/'/g, "\\'");
-                html += `<div class="flex items-center gap-2 py-1.5 ${idx > 0 ? 'border-t border-gray-700/40' : ''}" onclick="showPeptideHistory('${safe}')" style="cursor:pointer">
-                    <span class="text-sm">${logged ? '&#x2705;' : (isPast ? '&#x274C;' : '&#x1F489;')}</span>
-                    <span class="text-gray-100 font-medium text-sm flex-1">${peptide}</span>
-                    <span class="${logged ? 'text-emerald-400' : 'text-amber-400'} font-bold text-xs">${amountText}</span>
-                </div>`;
-            });
+            let total = 0;
+            const showLabels = dHasAM && dHasPM;
+            if (dHasAM) {
+                if (showLabels) html += `<div class="text-[10px] font-bold text-blue-400 uppercase tracking-[0.12em] mt-1">&#x1F305; AM</div>`;
+                grouped.morning.forEach((pep, idx) => { html += renderRow(pep, idx, total++); });
+            }
+            if (dHasPM) {
+                if (showLabels) html += `<div class="text-[10px] font-bold text-purple-400 uppercase tracking-[0.12em] mt-2">&#x1F319; PM</div>`;
+                grouped.evening.forEach((pep, idx) => { html += renderRow(pep, idx, total++); });
+            }
             html += `<div class="text-xs text-gray-500 mt-1">${day.fasting}</div>`;
         } else {
             html += `<div class="text-gray-500 text-sm py-1">No shots scheduled</div>`;
