@@ -9,7 +9,7 @@
 //
 // Bump CACHE_VERSION whenever you change which files are precached.
 
-const CACHE_VERSION = 'pepcc-v8';
+const CACHE_VERSION = 'pepcc-v9';
 const CORE_ASSETS = [
     './',
     './index.html',

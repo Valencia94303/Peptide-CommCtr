@@ -45,6 +45,14 @@
         @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); } }
         .expiry-pulse { animation: pulse-glow 2s ease-in-out infinite; }
 
+        /* Breadcrumb landing pulse — runs once when nav lands on a flagged item */
+        @keyframes landing-flash {
+            0%   { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); background-color: rgba(245, 158, 11, 0.18); }
+            50%  { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); background-color: transparent; }
+        }
+        .landing-flash { animation: landing-flash 1.6s ease-out 1; }
+
         /* Shot logged check pop + ripple */
         @keyframes checkPop { 0% { transform: scale(0.85); } 40% { transform: scale(1.08); } 100% { transform: scale(1); } }
         .check-pop { animation: checkPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
@@ -1021,18 +1029,115 @@ function closeModal() {
     document.body.style.overflow = '';
 }
 
+// Compute the admin alert payload from the latest cachedMasters + cachedPens.
+// "Expired" = filled/mixed > 28 days ago. "Expiring soon" = 25-28 days.
+// Returned even for non-admins (count will be 0 if not admin).
+function computeAdminAlerts() {
+    if (!isAdmin(currentProfile)) return { expiredMasters: [], expiringMasters: [], expiredPens: [], expiringPens: [], count: 0, hasExpired: false };
+    const masters = cachedMasters || [];
+    const pens = cachedPens || [];
+    const ageOf = (s) => daysSince(s);
+    const expiredMasters = masters.filter(m => ageOf(m.mixed_date) > 28);
+    const expiringMasters = masters.filter(m => { const a = ageOf(m.mixed_date); return a >= 25 && a <= 28; });
+    const expiredPens = pens.filter(p => ageOf(p.filled_date) > 28);
+    const expiringPens = pens.filter(p => { const a = ageOf(p.filled_date); return a >= 25 && a <= 28; });
+    const count = expiredMasters.length + expiringMasters.length + expiredPens.length + expiringPens.length;
+    return { expiredMasters, expiringMasters, expiredPens, expiringPens, count, hasExpired: (expiredMasters.length + expiredPens.length) > 0 };
+}
+
+// Repaint the More button's notification dot from current alert state.
+// Hidden when no alerts; amber for expiring-soon-only; red when anything has
+// actually expired. Shows the count inside the dot when > 1.
+function updateAdminAlertDot() {
+    const dot = document.getElementById('more-admin-dot');
+    if (!dot) return;
+    const a = computeAdminAlerts();
+    if (a.count === 0) {
+        dot.classList.add('hidden');
+        dot.textContent = '';
+        return;
+    }
+    dot.classList.remove('hidden');
+    dot.textContent = a.count > 1 ? String(a.count) : '';
+    const color = a.hasExpired ? 'bg-red-500' : 'bg-amber-500';
+    // Override the static class set by the header markup so the dot can grow
+    // into a small count badge when there's more than one alert.
+    dot.className = `absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full ${color} flex items-center justify-center text-[10px] font-bold text-white shadow`;
+}
+
+// Navigate to Admin Lab → Mix Bench, scroll to a specific master or pen, and
+// flash it once so the user's eye lands on the flagged item.
+function jumpToLabItem(kind, id) {
+    closeModal();
+    // Make sure the lab will paint Mix Bench (where masters + pens live).
+    currentLabTab = 'mix';
+    document.querySelectorAll('#lab-tabs [data-tab]').forEach(btn => {
+        const active = btn.dataset.tab === 'mix';
+        btn.className = active
+            ? 'lab-tab-btn flex-1 py-2 text-xs font-bold text-amber-400 bg-amber-900/30 rounded-lg transition'
+            : 'lab-tab-btn flex-1 py-2 text-xs font-semibold text-gray-500 hover:text-gray-300 rounded-lg transition';
+    });
+    showScreen('lab'); // triggers loadLab() which sets labData and renders
+    // Wait long enough for the fetch + render to finish before hunting for the
+    // node. 350ms covers a typical Supabase round-trip; we'll retry once if
+    // the element isn't there yet.
+    const selector = `[data-${kind}-id="${id}"]`;
+    const tryFlash = (attemptsLeft) => {
+        const el = document.querySelector(selector);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('landing-flash');
+            setTimeout(() => el.classList.remove('landing-flash'), 1700);
+            return;
+        }
+        if (attemptsLeft > 0) setTimeout(() => tryFlash(attemptsLeft - 1), 250);
+    };
+    setTimeout(() => tryFlash(4), 350);
+}
+
 // "More" bottom sheet — collapses secondary header actions behind one tap.
-// Rows reuse the existing modal overlay (which is bottom-anchored on mobile).
+// Admin users also see any active alerts inline above the Admin Lab row so
+// the dot acts as a breadcrumb to the specific flagged master or pen.
 function showMoreSheet() {
     const admin = isAdmin(currentProfile);
-    const row = (icon, label, onclick, badgeBg, badgeText) => `
+    const row = (icon, label, onclick, badgeBg, badgeText, extra) => `
         <button onclick="closeModal();${onclick}" class="w-full flex items-center gap-3 p-3 rounded-xl bg-gray-800/70 hover:bg-gray-800 transition active:scale-[0.98] text-left">
             <span class="w-10 h-10 flex items-center justify-center rounded-lg ${badgeBg} ${badgeText} text-lg shrink-0">${icon}</span>
-            <span class="text-sm font-semibold text-gray-100">${label}</span>
+            <span class="text-sm font-semibold text-gray-100 flex-1 min-w-0">${label}</span>
+            ${extra || ''}
         </button>`;
-    let html = `<div class="text-center mb-4">
+
+    let alertsBlock = '';
+    if (admin) {
+        const a = computeAdminAlerts();
+        if (a.count > 0) {
+            const items = [];
+            a.expiredMasters.forEach(m => items.push({ kind: 'master', id: m.id, peptide: m.peptide, age: daysSince(m.mixed_date), expired: true,  type: 'Master' }));
+            a.expiredPens.forEach(p => items.push({ kind: 'pen', id: p.id, peptide: p.peptide, age: daysSince(p.filled_date), expired: true,  type: 'Pen' }));
+            a.expiringMasters.forEach(m => items.push({ kind: 'master', id: m.id, peptide: m.peptide, age: daysSince(m.mixed_date), expired: false, type: 'Master' }));
+            a.expiringPens.forEach(p => items.push({ kind: 'pen', id: p.id, peptide: p.peptide, age: daysSince(p.filled_date), expired: false, type: 'Pen' }));
+            alertsBlock = `<div class="mb-3">
+                <div class="text-[10px] uppercase tracking-[0.12em] font-bold text-gray-500 mb-2 px-1">Needs attention</div>
+                <div class="space-y-1.5">`;
+            items.forEach(it => {
+                const dotColor = it.expired ? 'bg-red-500' : 'bg-amber-500';
+                const txtColor = it.expired ? 'text-red-400' : 'text-amber-400';
+                const labelText = it.expired ? `EXPIRED — ${it.age}d` : `${it.age}d — expires in ${28 - it.age}d`;
+                alertsBlock += `<button onclick="jumpToLabItem('${it.kind}','${it.id}')" class="w-full flex items-center gap-2.5 p-2.5 rounded-lg bg-gray-900/70 hover:bg-gray-900 transition active:scale-[0.98] text-left border border-gray-800">
+                    <span class="w-2 h-2 rounded-full ${dotColor} shrink-0"></span>
+                    <span class="text-xs font-bold text-gray-100">${it.peptide}</span>
+                    <span class="text-[10px] text-gray-500">${it.type}</span>
+                    <span class="text-[10px] font-bold ${txtColor} ml-auto shrink-0">${labelText}</span>
+                </button>`;
+            });
+            alertsBlock += `</div></div>`;
+        }
+    }
+
+    let html = `<div class="text-center mb-3">
         <div class="text-xs text-gray-500 uppercase tracking-[0.15em] font-bold">More</div>
     </div>
+    ${alertsBlock}
     <div class="space-y-2">
         ${row('&#x1F3C6;', 'Household Leaderboard', 'showLeaderboardModal()', 'bg-blue-900/30', 'text-blue-400')}
         ${row('&#x1F6AB;', 'No-Go Foods', 'showNoGoModal()', 'bg-red-900/30', 'text-red-400')}
@@ -1190,19 +1295,21 @@ async function loadDashboard() {
     document.getElementById('dash-avatar').textContent = (p.display_name || '?')[0].toUpperCase();
     document.getElementById('dash-username').textContent = p.display_name;
     document.getElementById('dash-date').textContent = formatDateLong(activeDate());
-    const adminDot = document.getElementById('more-admin-dot');
-    if (adminDot) {
-        if (isAdmin(p)) adminDot.classList.remove('hidden'); else adminDot.classList.add('hidden');
-    }
-
     showLoading('dash-content');
     try {
-        const [log, pens, masters, weightHist, rate, latestW, firstGLP1] = await Promise.all([
+        const dashFetches = [
             ensureTodayLog(), fetchMyActivePens(), fetchActiveMasters(), fetchWeightHistory(), computeWeeklyLossRate(), fetchLatestWeight(), fetchFirstGLP1ShotDate(),
             // getPeptideWindow() reads cachedPeptideTypes, so make sure it's populated
             // before renderDashboard groups today's shots into AM/PM blocks.
             fetchPeptideTypes()
-        ]);
+        ];
+        // Admin alert dot needs *all* active pens (not just the user's own), so
+        // pull them in parallel for admins. The result populates cachedPens
+        // which computeAdminAlerts reads.
+        if (isAdmin(p)) dashFetches.push(fetchActivePens());
+        const results = await Promise.all(dashFetches);
+        const [log, pens, masters, weightHist, rate, latestW, firstGLP1] = results;
+        updateAdminAlertDot();
         await renderDashboard(p, log, pens, masters, weightHist, rate, latestW, firstGLP1);
     } catch (e) {
         document.getElementById('dash-content').innerHTML = `<div class="text-center py-12 text-red-400">${e.message}</div>`;
@@ -1979,6 +2086,7 @@ async function loadLab(preserveScroll) {
         ]);
         labData = { masters, pens, types, inv, profiles };
         renderLab();
+        updateAdminAlertDot();
         if (preserveScroll) setTimeout(() => window.scrollTo(0, scrollY), 50);
     } catch (e) { document.getElementById('lab-content').innerHTML = `<div class="text-red-400 text-center py-12">${e.message}</div>`; }
 }
@@ -2051,7 +2159,7 @@ function renderLabMix(masters, pens, types, profiles) {
         masters.forEach(m => {
             const age = daysSince(m.mixed_date), expired = age > 28, expiring = age >= 25;
             const pct = m.total_ml > 0 ? ((m.remaining_ml / m.total_ml) * 100).toFixed(0) : 0;
-            html += `<div data-pep="${m.peptide}" class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
+            html += `<div data-pep="${m.peptide}" data-master-id="${m.id}" class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
                 <div class="flex justify-between items-start"><div class="flex-1">
                     <div class="font-bold text-white">${m.peptide} <span class="text-xs text-gray-500">Master</span></div>
                     <div class="text-xs text-gray-400">${m.total_mg}mg in ${m.total_ml}mL &bull; <span class="text-amber-400 font-bold">${m.concentration} mg/mL</span></div>
@@ -2100,7 +2208,7 @@ function renderLabMix(masters, pens, types, profiles) {
             const statusColor = pen.shared ? 'text-emerald-400' : (pen.assigned_to ? 'text-amber-400' : 'text-gray-600');
             const curRemaining = (pen.remaining_ml == null) ? Number(pen.total_ml) : Number(pen.remaining_ml);
             const remainingPct = Number(pen.total_ml) > 0 ? Math.max(0, Math.min(100, (curRemaining / Number(pen.total_ml)) * 100)) : 0;
-            html += `<div data-pep="${pen.peptide} ${ownerName}" class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
+            html += `<div data-pep="${pen.peptide} ${ownerName}" data-pen-id="${pen.id}" class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
                 <div class="flex justify-between items-start"><div class="flex-1 min-w-0">
                     <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span> <span class="text-xs ${statusColor}">${ownerName}</span></div>
                     <div class="text-xs text-gray-400">${pen.mg_content}mg in ${pen.total_ml}mL &bull; <span class="text-amber-400 font-bold">${pen.concentration} mg/mL</span></div>
