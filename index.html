@@ -6,6 +6,14 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+    <meta name="theme-color" content="#d97706">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="PepCC">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="apple-touch-icon" href="icon.svg">
     <title>Peptide Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -2925,10 +2933,15 @@ function renderSettings(recentLogs, allProfiles, todayLogs) {
     html += `<div class="card"><div class="section-title">Help</div>
         <a href="docs/user-guide.html" target="_blank" class="btn-secondary block text-center" style="text-decoration:none">User Guide</a></div>`;
 
-    // Export
-    html += `<div class="card"><div class="section-title">Data Export</div>
-        <p class="text-xs text-gray-500 mb-3">Download your log history as JSON.</p>
-        <button onclick="exportMyData()" class="btn-secondary">&#x1F4BE; Export My Logs</button></div>`;
+    // Backup / Restore
+    html += `<div class="card"><div class="section-title">Backup &amp; Restore</div>
+        <p class="text-xs text-gray-500 mb-3">Backup includes your profile, daily logs, measurements, and protocol overrides. Restore upserts logs and measurements (won't delete anything).</p>
+        <div class="grid grid-cols-2 gap-2">
+            <button onclick="exportMyData()" class="btn-secondary">&#x1F4BE; Download Backup</button>
+            <button onclick="document.getElementById('restore-file').click()" class="btn-secondary">&#x1F4E5; Restore</button>
+        </div>
+        <input type="file" id="restore-file" accept=".json,application/json" style="display:none" onchange="handleRestoreFile(this)">
+    </div>`;
 
     // Log history
     if (recentLogs.length > 0) {
@@ -2950,12 +2963,102 @@ function renderSettings(recentLogs, allProfiles, todayLogs) {
 
 async function exportMyData() {
     try {
-        const { data } = await sb.from('daily_logs').select('*').eq('user_id', currentSession.user.id).order('log_date');
-        const blob = new Blob([JSON.stringify({ profile: currentProfile, logs: data }, null, 2)], { type: 'application/json' });
+        const uid = currentSession.user.id;
+        const [logsR, measR, pensR] = await Promise.all([
+            sb.from('daily_logs').select('*').eq('user_id', uid).order('log_date'),
+            sb.from('measurements').select('*').eq('user_id', uid).order('measured_date'),
+            sb.from('pens').select('*').or(`assigned_to.eq.${uid},shared.eq.true`).order('filled_date')
+        ]);
+        const payload = {
+            schema: 'pepcc-backup',
+            version: 1,
+            exported_at: new Date().toISOString(),
+            user: { id: uid, display_name: currentProfile.display_name, email: currentSession.user.email },
+            profile: currentProfile,
+            daily_logs: logsR.data || [],
+            measurements: measR.data || [],
+            pens_snapshot: pensR.data || []
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `peptide-cc-${currentProfile.display_name}-${todayStr()}.json`;
+        a.download = `pepcc-backup-${currentProfile.display_name}-${todayStr()}.json`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
     } catch(e) { alert(e.message); }
+}
+
+async function handleRestoreFile(input) {
+    const file = input.files && input.files[0];
+    input.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (data.schema !== 'pepcc-backup') throw new Error('Not a Peptide Command Center backup file.');
+        if (data.user && data.user.id && data.user.id !== currentSession.user.id) {
+            if (!confirm(`Backup belongs to ${data.user.display_name || 'another user'}. Restoring will write to YOUR account. Continue?`)) return;
+        }
+        const logs = Array.isArray(data.daily_logs) ? data.daily_logs : [];
+        const meas = Array.isArray(data.measurements) ? data.measurements : [];
+        const exportedAt = data.exported_at ? new Date(data.exported_at).toLocaleString() : 'unknown';
+        const html = `
+            <div class="text-center mb-4">
+                <div class="text-3xl mb-2">&#x1F4E5;</div>
+                <h3 class="text-lg font-bold text-amber-400">Restore from Backup</h3>
+                <p class="text-xs text-gray-500">Exported: ${exportedAt}</p>
+            </div>
+            <div class="space-y-2 mb-4 text-sm">
+                <div class="flex justify-between"><span class="text-gray-400">Daily logs</span><span class="text-white font-bold">${logs.length}</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Measurements</span><span class="text-white font-bold">${meas.length}</span></div>
+                <label class="flex items-center gap-2 mt-3 cursor-pointer">
+                    <input type="checkbox" id="restore-profile-too" class="w-4 h-4">
+                    <span class="text-xs text-gray-300">Also restore profile fields (macro targets, no-go foods, schedule overrides). Will overwrite current settings.</span>
+                </label>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="closeModal()" class="btn-shot bg-gray-800 border border-gray-700 text-gray-300" style="box-shadow:none">Cancel</button>
+                <button onclick="runRestore()" class="btn-primary">Restore</button>
+            </div>`;
+        window._pendingRestore = data;
+        showModal(html);
+    } catch (e) {
+        alert('Restore error: ' + e.message);
+    }
+}
+
+async function runRestore() {
+    const data = window._pendingRestore;
+    if (!data) { closeModal(); return; }
+    const restoreProfile = !!document.getElementById('restore-profile-too')?.checked;
+    closeModal();
+    try {
+        const uid = currentSession.user.id;
+        let logsCount = 0, measCount = 0;
+        if (Array.isArray(data.daily_logs) && data.daily_logs.length > 0) {
+            const rows = data.daily_logs.map(l => ({ ...l, user_id: uid }));
+            // Strip created_at/updated_at so DB defaults take effect on new rows.
+            rows.forEach(r => { delete r.id; });
+            const { error } = await sb.from('daily_logs').upsert(rows, { onConflict: 'user_id,log_date' });
+            if (error) throw error;
+            logsCount = rows.length;
+        }
+        if (Array.isArray(data.measurements) && data.measurements.length > 0) {
+            const rows = data.measurements.map(m => ({ ...m, user_id: uid }));
+            rows.forEach(r => { delete r.id; });
+            const { error } = await sb.from('measurements').upsert(rows, { onConflict: 'user_id,measured_date' });
+            if (error) throw error;
+            measCount = rows.length;
+        }
+        if (restoreProfile && data.profile) {
+            const safe = { ...data.profile };
+            delete safe.id; delete safe.created_at; delete safe.is_admin;
+            await updateProfileField(uid, safe);
+        }
+        window._pendingRestore = null;
+        alert(`Restored ${logsCount} log${logsCount === 1 ? '' : 's'}` + (measCount ? ` and ${measCount} measurement${measCount === 1 ? '' : 's'}` : '') + (restoreProfile ? '. Profile updated.' : '.'));
+        await loadSettings();
+    } catch (e) {
+        alert('Restore failed: ' + e.message);
+    }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
@@ -3031,6 +3134,14 @@ async function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+// PWA: register the service worker after the app has had a moment to settle.
+// Failures are non-fatal — the app still works without it.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW registration failed:', e));
+    });
+}
 </script>
 </body>
 </html>

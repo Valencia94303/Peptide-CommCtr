@@ -1,0 +1,19 @@
+{
+    "name": "Peptide Command Center",
+    "short_name": "PepCC",
+    "description": "Daily peptide protocol, shot logging, and progress tracking.",
+    "start_url": "./index.html",
+    "scope": "./",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#030712",
+    "theme_color": "#d97706",
+    "icons": [
+        {
+            "src": "icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}
