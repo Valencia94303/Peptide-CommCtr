@@ -193,11 +193,9 @@
                 <p id="dash-date" class="text-[10px] text-gray-500 font-medium"></p>
             </div>
             <div class="flex gap-2 items-center">
-                <button onclick="showSummaryModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 text-lg transition active:scale-90" title="Activity Summary">&#x1F4CA;</button>
-                <button onclick="showLeaderboardModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-blue-900/30 text-blue-400 text-lg transition active:scale-90" title="Household Leaderboard">&#x1F3C6;</button>
                 <button onclick="showScreen('messages')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-purple-900/30 text-purple-400 text-lg transition active:scale-90 relative" title="Household Messages" id="btn-messages">&#x1F4AC;<span id="msg-badge" class="hidden absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] text-white font-bold flex items-center justify-center"></span></button>
-                <button onclick="showNoGoModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-red-900/30 text-red-400 text-lg transition active:scale-90" title="No-Go Foods">&#x1F6AB;</button>
-                <button id="btn-lab" onclick="showScreen('lab')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-amber-900/30 text-amber-400 text-lg transition active:scale-90 hidden" title="Admin Lab">&#x2697;&#xFE0F;</button>
+                <button onclick="showSummaryModal()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 text-lg transition active:scale-90" title="Activity Summary">&#x1F4CA;</button>
+                <button onclick="showMoreSheet()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-800 text-gray-300 text-lg transition active:scale-90 relative" title="More" id="btn-more">&#x22EF;<span id="more-admin-dot" class="hidden absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full"></span></button>
                 <button onclick="showScreen('settings')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-800 text-gray-400 text-lg transition active:scale-90" title="Settings">&#x2699;&#xFE0F;</button>
             </div>
         </div>
@@ -206,10 +204,17 @@
 
     <!-- ==================== ADMIN LAB SCREEN ==================== -->
     <div id="screen-lab" class="hidden fade-in">
-        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
-            <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
-            <h2 class="text-lg font-bold text-amber-500">&#x2697;&#xFE0F; Admin Lab</h2>
-            <div class="w-8"></div>
+        <div class="sticky top-0 z-40">
+            <div class="glass-header px-4 py-3 flex items-center justify-between">
+                <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
+                <h2 class="text-lg font-bold text-amber-500">&#x2697;&#xFE0F; Admin Lab</h2>
+                <div class="w-8"></div>
+            </div>
+            <div id="lab-tabs" class="glass-header border-t border-gray-800/40 px-2 py-1.5 flex gap-1">
+                <button data-tab="mix" onclick="switchLabTab('mix')" class="lab-tab-btn flex-1 py-2 text-xs font-bold text-amber-400 bg-amber-900/30 rounded-lg transition">&#x1F9EA; Mix Bench</button>
+                <button data-tab="people" onclick="switchLabTab('people')" class="lab-tab-btn flex-1 py-2 text-xs font-semibold text-gray-500 hover:text-gray-300 rounded-lg transition">&#x1F465; People</button>
+                <button data-tab="inventory" onclick="switchLabTab('inventory')" class="lab-tab-btn flex-1 py-2 text-xs font-semibold text-gray-500 hover:text-gray-300 rounded-lg transition">&#x1F4E6; Inventory</button>
+            </div>
         </div>
         <div id="lab-content" class="p-4 space-y-4 pb-8"></div>
     </div>
@@ -959,6 +964,28 @@ function closeModal() {
     document.body.style.overflow = '';
 }
 
+// "More" bottom sheet — collapses secondary header actions behind one tap.
+// Rows reuse the existing modal overlay (which is bottom-anchored on mobile).
+function showMoreSheet() {
+    const admin = isAdmin(currentProfile);
+    const row = (icon, label, onclick, badgeBg, badgeText) => `
+        <button onclick="closeModal();${onclick}" class="w-full flex items-center gap-3 p-3 rounded-xl bg-gray-800/70 hover:bg-gray-800 transition active:scale-[0.98] text-left">
+            <span class="w-10 h-10 flex items-center justify-center rounded-lg ${badgeBg} ${badgeText} text-lg shrink-0">${icon}</span>
+            <span class="text-sm font-semibold text-gray-100">${label}</span>
+        </button>`;
+    let html = `<div class="text-center mb-4">
+        <div class="text-xs text-gray-500 uppercase tracking-[0.15em] font-bold">More</div>
+    </div>
+    <div class="space-y-2">
+        ${row('&#x1F3C6;', 'Household Leaderboard', 'showLeaderboardModal()', 'bg-blue-900/30', 'text-blue-400')}
+        ${row('&#x1F6AB;', 'No-Go Foods', 'showNoGoModal()', 'bg-red-900/30', 'text-red-400')}
+        ${row('&#x1F4CF;', 'Body Measurements', "showScreen('measurements')", 'bg-cyan-900/30', 'text-cyan-400')}
+        ${admin ? row('&#x2697;&#xFE0F;', 'Admin Lab', "showScreen('lab')", 'bg-amber-900/30', 'text-amber-400') : ''}
+    </div>
+    <button onclick="closeModal()" class="btn-secondary mt-5">Close</button>`;
+    showModal(html);
+}
+
 // ╔══════════════════════════════════════════════════════════════╗
 // ║                 8. AUTH SCREEN                              ║
 // ╚══════════════════════════════════════════════════════════════╝
@@ -1106,8 +1133,10 @@ async function loadDashboard() {
     document.getElementById('dash-avatar').textContent = (p.display_name || '?')[0].toUpperCase();
     document.getElementById('dash-username').textContent = p.display_name;
     document.getElementById('dash-date').textContent = formatDateLong(activeDate());
-    const labBtn = document.getElementById('btn-lab');
-    if (isAdmin(p)) labBtn.classList.remove('hidden'); else labBtn.classList.add('hidden');
+    const adminDot = document.getElementById('more-admin-dot');
+    if (adminDot) {
+        if (isAdmin(p)) adminDot.classList.remove('hidden'); else adminDot.classList.add('hidden');
+    }
 
     showLoading('dash-content');
     try {
@@ -1852,19 +1881,52 @@ function renderWeightChart(profile, entries) {
 // ║                 12. ADMIN LAB                               ║
 // ╚══════════════════════════════════════════════════════════════╝
 
+// Lab tab state
+let currentLabTab = 'mix';   // 'mix' | 'people' | 'inventory'
+let labData = null;          // most recent fetch result, used to re-render on tab switch
+let labOpenUser = null;      // user id whose People-tab card is expanded (null = collapsed)
+let labPenFilter = '';       // search text for Active Pens
+let labMasterFilter = '';    // search text for Active Masters
+
 async function loadLab(preserveScroll) {
     const scrollY = preserveScroll ? window.scrollY : 0;
-    if (!preserveScroll) showLoading('lab-content');
+    if (!preserveScroll && !labData) showLoading('lab-content');
     try {
         const [masters, pens, types, inv, profiles] = await Promise.all([
             fetchActiveMasters(), fetchActivePens(), fetchPeptideTypes(), fetchInventory(), fetchAllProfiles()
         ]);
-        renderLab(masters, pens, types, inv, profiles);
+        labData = { masters, pens, types, inv, profiles };
+        renderLab();
         if (preserveScroll) setTimeout(() => window.scrollTo(0, scrollY), 50);
     } catch (e) { document.getElementById('lab-content').innerHTML = `<div class="text-red-400 text-center py-12">${e.message}</div>`; }
 }
 
-function renderLab(masters, pens, types, inv, profiles) {
+function switchLabTab(name) {
+    if (currentLabTab === name) return;
+    currentLabTab = name;
+    document.querySelectorAll('#lab-tabs [data-tab]').forEach(btn => {
+        const active = btn.dataset.tab === name;
+        btn.className = active
+            ? 'lab-tab-btn flex-1 py-2 text-xs font-bold text-amber-400 bg-amber-900/30 rounded-lg transition'
+            : 'lab-tab-btn flex-1 py-2 text-xs font-semibold text-gray-500 hover:text-gray-300 rounded-lg transition';
+    });
+    if (labData) renderLab();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderLab() {
+    if (!labData) return;
+    const { masters, pens, types, inv, profiles } = labData;
+    let html;
+    if (currentLabTab === 'mix')         html = renderLabMix(masters, pens, types, profiles);
+    else if (currentLabTab === 'people') html = renderLabPeople(profiles, pens, types);
+    else                                 html = renderLabInventory(inv, types);
+    document.getElementById('lab-content').innerHTML = html;
+    applyLabFilters();
+}
+
+// ─── Lab Tab: Mix Bench ─────────────────────────────────────────────
+function renderLabMix(masters, pens, types, profiles) {
     let html = '';
 
     // === MIXING CALCULATOR ===
@@ -1897,20 +1959,29 @@ function renderLab(masters, pens, types, inv, profiles) {
 
     // === ACTIVE MASTER VIALS ===
     html += `<div class="card"><div class="section-title">Active Master Vials</div>`;
-    if (masters.length === 0) { html += '<div class="text-gray-600 text-sm text-center py-4">No master vials yet</div>'; }
-    else { masters.forEach(m => {
-        const age = daysSince(m.mixed_date), expired = age > 28, expiring = age >= 25;
-        const pct = m.total_ml > 0 ? ((m.remaining_ml / m.total_ml) * 100).toFixed(0) : 0;
-        html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
-            <div class="flex justify-between items-start"><div class="flex-1">
-                <div class="font-bold text-white">${m.peptide} <span class="text-xs text-gray-500">Master</span></div>
-                <div class="text-xs text-gray-400">${m.total_mg}mg in ${m.total_ml}mL &bull; <span class="text-amber-400 font-bold">${m.concentration} mg/mL</span></div>
-                <div class="text-xs text-gray-400">Remaining: ${m.remaining_ml}mL of ${m.total_ml}mL (${pct}%)</div>
-                <div class="w-full bg-gray-700 rounded-full h-1.5 mt-1"><div class="bg-amber-500 h-1.5 rounded-full" style="width:${pct}%"></div></div>
-                <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'} mt-1">
-                    Mixed: ${formatDate(m.mixed_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
-            </div>
-            <button onclick="depleteMaster('${m.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div></div>`; }); }
+    if (masters.length === 0) {
+        html += labEmptyState('&#x1F9EA;', 'No master vials yet', 'Use the form above to reconstitute your first master.');
+    } else {
+        if (masters.length > 3) {
+            html += `<div class="mb-3"><input type="text" id="lab-master-filter" placeholder="Search by peptide..." value="${labMasterFilter}" oninput="labMasterFilter=this.value;applyLabFilters()" class="input-field text-sm py-2"></div>`;
+        }
+        html += `<div id="lab-master-list">`;
+        masters.forEach(m => {
+            const age = daysSince(m.mixed_date), expired = age > 28, expiring = age >= 25;
+            const pct = m.total_ml > 0 ? ((m.remaining_ml / m.total_ml) * 100).toFixed(0) : 0;
+            html += `<div data-pep="${m.peptide}" class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
+                <div class="flex justify-between items-start"><div class="flex-1">
+                    <div class="font-bold text-white">${m.peptide} <span class="text-xs text-gray-500">Master</span></div>
+                    <div class="text-xs text-gray-400">${m.total_mg}mg in ${m.total_ml}mL &bull; <span class="text-amber-400 font-bold">${m.concentration} mg/mL</span></div>
+                    <div class="text-xs text-gray-400">Remaining: ${m.remaining_ml}mL of ${m.total_ml}mL (${pct}%)</div>
+                    <div class="w-full bg-gray-700 rounded-full h-1.5 mt-1"><div class="bg-amber-500 h-1.5 rounded-full" style="width:${pct}%"></div></div>
+                    <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'} mt-1">
+                        Mixed: ${formatDate(m.mixed_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
+                </div>
+                <button onclick="depleteMaster('${m.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div></div>`;
+        });
+        html += `</div>`;
+    }
     html += '</div>';
 
     // === FILL A PEN ===
@@ -1934,195 +2005,313 @@ function renderLab(masters, pens, types, inv, profiles) {
 
     // === ACTIVE PENS ===
     html += `<div class="card"><div class="section-title">Active Pens</div>`;
-    if (pens.length === 0) { html += '<div class="text-gray-600 text-sm text-center py-4">No active pens</div>'; }
-    else { pens.forEach(pen => {
-        const age = daysSince(pen.filled_date), expired = age > 28, expiring = age >= 25;
-        const statusText = pen.shared ? 'shared' : (pen.assigned_to ? (profiles.find(u=>u.id===pen.assigned_to)?.display_name || '') : 'unassigned');
-        const statusColor = pen.shared ? 'text-emerald-400' : (pen.assigned_to ? 'text-amber-400' : 'text-gray-600');
-        html += `<div class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
-            <div class="flex justify-between items-start"><div>
-                <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span> <span class="text-xs ${statusColor}">${statusText}</span></div>
-                <div class="text-xs text-gray-400">${pen.mg_content}mg in ${pen.total_ml}mL &bull; <span class="text-amber-400 font-bold">${pen.concentration} mg/mL</span></div>
-                <div class="text-xs text-gray-400">${pen.ml_from_master}mL master + ${pen.ml_fresh_water}mL water</div>
-                <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'}">
-                    Filled: ${formatDate(pen.filled_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
-            </div>
-            <button onclick="depletePen('${pen.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div>
-            <div class="flex gap-2 mt-2 pt-2 border-t border-gray-700">
-                <select class="input-field text-xs py-1.5 flex-1" onchange="handlePenAction('${pen.id}', this.value); this.value=''">
-                    <option value="">Reassign&hellip;</option>
-                    ${profiles.map(u => `<option value="assign-${u.id}" ${pen.assigned_to === u.id && !pen.shared ? 'disabled' : ''}>${u.display_name}</option>`).join('')}
-                    <option value="share" ${pen.shared ? 'disabled' : ''}>Shared (both)</option>
-                    <option value="unassign">Unassign</option>
-                </select>
-            </div></div>`; }); }
+    if (pens.length === 0) {
+        html += labEmptyState('&#x1F58A;&#xFE0F;', 'No active pens', 'Fill a pen from a master vial using the form above.');
+    } else {
+        if (pens.length > 3) {
+            html += `<div class="mb-3"><input type="text" id="lab-pen-filter" placeholder="Search by peptide or owner..." value="${labPenFilter}" oninput="labPenFilter=this.value;applyLabFilters()" class="input-field text-sm py-2"></div>`;
+        }
+        html += `<div id="lab-pen-list">`;
+        pens.forEach(pen => {
+            const age = daysSince(pen.filled_date), expired = age > 28, expiring = age >= 25;
+            const ownerName = pen.shared ? 'shared' : (pen.assigned_to ? (profiles.find(u=>u.id===pen.assigned_to)?.display_name || '') : 'unassigned');
+            const statusColor = pen.shared ? 'text-emerald-400' : (pen.assigned_to ? 'text-amber-400' : 'text-gray-600');
+            html += `<div data-pep="${pen.peptide} ${ownerName}" class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
+                <div class="flex justify-between items-start"><div>
+                    <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span> <span class="text-xs ${statusColor}">${ownerName}</span></div>
+                    <div class="text-xs text-gray-400">${pen.mg_content}mg in ${pen.total_ml}mL &bull; <span class="text-amber-400 font-bold">${pen.concentration} mg/mL</span></div>
+                    <div class="text-xs text-gray-400">${pen.ml_from_master}mL master + ${pen.ml_fresh_water}mL water</div>
+                    <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'}">
+                        Filled: ${formatDate(pen.filled_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
+                </div>
+                <button onclick="depletePen('${pen.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div>
+                <div class="flex gap-2 mt-2 pt-2 border-t border-gray-700">
+                    <select class="input-field text-xs py-1.5 flex-1" onchange="handlePenAction('${pen.id}', this.value); this.value=''">
+                        <option value="">Reassign&hellip;</option>
+                        ${profiles.map(u => `<option value="assign-${u.id}" ${pen.assigned_to === u.id && !pen.shared ? 'disabled' : ''}>${u.display_name}</option>`).join('')}
+                        <option value="share" ${pen.shared ? 'disabled' : ''}>Shared (both)</option>
+                        <option value="unassign">Unassign</option>
+                    </select>
+                </div></div>`;
+        });
+        html += `</div>`;
+    }
     html += '</div>';
 
-    // === PROTOCOL EDITOR ===
-    html += `<div class="card"><div class="section-title">Protocol Editor</div>
-        <p class="text-xs text-gray-500 mb-3">Customize each user's weekly schedule. Pick the injection window per day and toggle which peptides are scheduled. Unchanged days fall back to the built-in defaults.</p>`;
+    return html;
+}
+
+// ─── Lab Tab: People ────────────────────────────────────────────────
+function renderLabPeople(profiles, pens, types) {
+    let html = '';
+
+    // Quick-switch chip row — tap to expand a specific user
+    if (profiles.length > 0) {
+        html += `<div class="flex flex-wrap gap-2 mb-1">`;
+        profiles.forEach(u => {
+            const open = labOpenUser === u.id;
+            html += `<button onclick="focusLabUser('${u.id}')" class="text-xs px-3 py-1.5 rounded-full transition ${open ? 'bg-amber-600 text-white font-bold' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">${u.display_name}</button>`;
+        });
+        html += `<button onclick="labOpenUser=null;renderLab()" class="text-xs px-3 py-1.5 rounded-full transition bg-gray-900 text-gray-500 hover:text-gray-300" title="Collapse all">&minus;</button>`;
+        html += `</div>`;
+    }
+
+    if (profiles.length === 0) {
+        html += labEmptyState('&#x1F465;', 'No users yet', 'Profiles will appear here once team members sign up.');
+        return html;
+    }
+
     profiles.forEach(u => {
-        const effective = getSchedule(u);
-        const override = u.schedule_override || {};
         const stack = u.peptide_type ? u.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
+        const override = u.schedule_override || {};
         const hasOverride = override && Object.keys(override).length > 0;
-        html += `<div class="bg-gray-800 rounded-lg p-3 mb-3">
-            <div class="flex items-center justify-between mb-2">
-                <div class="font-bold text-amber-400 text-sm">${u.display_name}</div>
-                ${hasOverride ? `<button onclick="resetUserSchedule('${u.id}')" class="text-xs text-gray-400 hover:text-red-400 bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded transition">Reset to default</button>` : '<span class="text-[10px] text-gray-600 uppercase tracking-wide">Using defaults</span>'}
-            </div>
-            <div class="space-y-2">`;
-        for (let d = 0; d < 7; d++) {
-            const day = effective[d] || { window: 'morning', shots: [] };
-            const overridden = !!(override[d] || override[String(d)]);
-            const shots = day.shots || [];
-            html += `<div class="rounded-lg p-2 ${overridden ? 'bg-amber-950/30 border border-amber-800/40' : 'bg-gray-900 border border-gray-700/40'}">
-                <div class="flex items-center gap-2 mb-1.5">
-                    <span class="text-xs font-bold text-gray-300 w-10">${DAYS_SHORT[d]}</span>
-                    <select class="input-field text-xs py-1.5 flex-1" onchange="updateUserScheduleWindow('${u.id}',${d},this.value)">
-                        <option value="morning" ${day.window==='morning'?'selected':''}>&#x1F305; Morning</option>
-                        <option value="evening" ${day.window==='evening'?'selected':''}>&#x1F319; Evening</option>
-                    </select>
+        const userWk = weekNum(u);
+        const open = labOpenUser === u.id;
+
+        // Card header — always shown, click to expand
+        html += `<div id="lab-user-${u.id}" class="card" style="padding:0;overflow:hidden">
+            <button onclick="toggleLabUser('${u.id}')" class="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-800/40 transition text-left">
+                <div class="w-9 h-9 bg-gradient-to-br from-amber-500 to-amber-700 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">${(u.display_name||'?')[0].toUpperCase()}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-gray-100 text-sm">${u.display_name}</div>
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wide mt-0.5">
+                        ${stack.length} peptide${stack.length===1?'':'s'} &bull; wk ${userWk}${hasOverride?' &bull; <span class="text-amber-500">custom</span>':''}
+                    </div>
                 </div>
-                <div class="flex flex-wrap gap-1.5">`;
+                <span class="text-gray-500 text-lg transition-transform ${open?'rotate-180':''}">&#x25BE;</span>
+            </button>`;
+
+        if (open) {
+            html += `<div class="border-t border-gray-800 px-4 py-3 space-y-4">`;
+
+            // --- Sub-section: Doses ---
+            html += `<div>
+                <div class="flex items-center justify-between mb-2">
+                    <div class="text-xs font-bold text-amber-400 uppercase tracking-wider">&#x1F48A; Current Doses</div>
+                </div>`;
+            const doses = u.current_doses || {};
+            const available = types.filter(t => !stack.includes(t.name));
             if (stack.length === 0) {
-                html += `<span class="text-xs text-gray-600">No peptides in stack &mdash; add one below.</span>`;
+                html += `<div class="text-xs text-gray-600 italic mb-2">No peptides in stack &mdash; add one below.</div>`;
             } else {
+                html += `<div class="space-y-2">`;
                 stack.forEach(pep => {
-                    const active = shots.includes(pep);
-                    const safe = pep.replace(/'/g, "\\'");
-                    html += `<button onclick="toggleUserScheduleShot('${u.id}',${d},'${safe}')" class="text-xs px-2 py-1 rounded-full transition ${active ? 'bg-amber-600 hover:bg-amber-500 text-white font-bold' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}">${pep}</button>`;
+                    const mg = doses[pep] || '';
+                    const pen = pens.find(p => p.peptide === pep);
+                    const preview = (pen && mg) ? calcUnitsFromConc(mg, pen.concentration)+' units @ '+pen.concentration+' mg/mL' : '';
+                    html += `<div class="flex items-center gap-2 bg-gray-900/60 rounded-lg p-2">
+                        <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
+                        <span class="text-xs text-gray-300 font-medium w-24 shrink-0 truncate">${pep}</span>
+                        <input type="number" inputmode="decimal" step="0.25" class="input-field text-sm py-1.5" style="max-width:80px" value="${mg}" placeholder="mg" onchange="updateUserDose('${u.id}','${pep}',this.value)">
+                        <span class="text-[10px] text-gray-500">mg</span>
+                        ${preview?`<span class="text-[10px] text-amber-400 font-bold ml-auto truncate">${preview}</span>`:'<span class="text-[10px] text-gray-600 ml-auto">no pen</span>'}
+                    </div>`;
                 });
+                html += `</div>`;
+            }
+            if (available.length > 0) {
+                html += `<div class="flex items-center gap-2 mt-2 pt-2 border-t border-gray-800">
+                    <select class="input-field text-xs py-2 flex-1" id="add-pep-${u.id}"><option value="">Add peptide...</option>
+                        ${available.map(t=>`<option value="${t.name}">${t.name}</option>`).join('')}</select>
+                    <button onclick="addUserPeptide('${u.id}')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95">+</button>
+                </div>`;
+            }
+            html += `</div>`;
+
+            // --- Sub-section: Protocol (weekly schedule) ---
+            html += `<div>
+                <div class="flex items-center justify-between mb-2">
+                    <div class="text-xs font-bold text-amber-400 uppercase tracking-wider">&#x1F4C5; Weekly Protocol</div>
+                    ${hasOverride ? `<button onclick="resetUserSchedule('${u.id}')" class="text-[10px] text-gray-400 hover:text-red-400 bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded transition">Reset to default</button>` : '<span class="text-[10px] text-gray-600 uppercase tracking-wide">Defaults</span>'}
+                </div>
+                <div class="space-y-1.5">`;
+            const effective = getSchedule(u);
+            for (let d = 0; d < 7; d++) {
+                const day = effective[d] || { window: 'morning', shots: [] };
+                const overridden = !!(override[d] || override[String(d)]);
+                const shots = day.shots || [];
+                html += `<div class="rounded-lg p-2 ${overridden ? 'bg-amber-950/30 border border-amber-800/40' : 'bg-gray-900/60 border border-gray-800'}">
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="text-xs font-bold text-gray-300 w-9">${DAYS_SHORT[d]}</span>
+                        <select class="input-field text-xs py-1.5 flex-1" onchange="updateUserScheduleWindow('${u.id}',${d},this.value)">
+                            <option value="morning" ${day.window==='morning'?'selected':''}>&#x1F305; Morning</option>
+                            <option value="evening" ${day.window==='evening'?'selected':''}>&#x1F319; Evening</option>
+                        </select>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">`;
+                if (stack.length === 0) {
+                    html += `<span class="text-[11px] text-gray-600">Add a peptide above first.</span>`;
+                } else {
+                    stack.forEach(pep => {
+                        const active = shots.includes(pep);
+                        const safe = pep.replace(/'/g, "\\'");
+                        html += `<button onclick="toggleUserScheduleShot('${u.id}',${d},'${safe}')" class="text-[11px] px-2 py-1 rounded-full transition ${active ? 'bg-amber-600 hover:bg-amber-500 text-white font-bold' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}">${pep}</button>`;
+                    });
+                }
+                html += `</div></div>`;
             }
             html += `</div></div>`;
-        }
-        html += `</div></div>`;
-    });
-    html += '</div>';
 
-    // === USER DOSE MANAGEMENT ===
-    html += `<div class="card"><div class="section-title">User Dose Management</div>
-        <p class="text-xs text-gray-500 mb-3">Set each user's current dose. Units auto-calculate from their active pen's concentration.</p>`;
-    profiles.forEach(u => {
-        const doses = u.current_doses || {};
-        const pepList = u.peptide_type ? u.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
-        const available = types.filter(t => !pepList.includes(t.name));
-        html += `<div class="bg-gray-800 rounded-lg p-3 mb-3"><div class="font-bold text-amber-400 text-sm mb-2">${u.display_name}</div><div class="space-y-2">`;
-        pepList.forEach(pep => {
-            const mg = doses[pep] || '';
-            const pen = pens.find(p => p.peptide === pep);
-            const preview = (pen && mg) ? calcUnitsFromConc(mg, pen.concentration)+' units @ '+pen.concentration+' mg/mL' : '';
-            html += `<div class="flex items-center gap-2">
-                <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
-                <span class="text-xs text-gray-400 w-24 shrink-0">${pep}</span>
-                <input type="number" inputmode="decimal" step="0.25" class="input-field text-sm py-2" style="max-width:90px" value="${mg}" placeholder="mg" onchange="updateUserDose('${u.id}','${pep}',this.value)">
-                <span class="text-xs text-gray-500">mg</span>
-                ${preview?`<span class="text-xs text-amber-400 font-bold ml-auto">${preview}</span>`:'<span class="text-xs text-gray-600 ml-auto">no pen</span>'}
-            </div>`;
-        });
-        html += '</div>';
-        if (available.length > 0) {
-            html += `<div class="flex items-center gap-2 mt-3 pt-2 border-t border-gray-700">
-                <select class="input-field text-sm py-2 flex-1" id="add-pep-${u.id}"><option value="">Add peptide...</option>
-                    ${available.map(t=>`<option value="${t.name}">${t.name}</option>`).join('')}</select>
-                <button onclick="addUserPeptide('${u.id}')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95">+</button></div>`;
-        }
-        html += '</div>';
-    });
-    html += '</div>';
-
-    // === TITRATION & CYCLES ===
-    html += `<div class="card"><div class="section-title">Titration &amp; Cycles</div>
-        <p class="text-xs text-gray-500 mb-3">Plan dose escalations and on/off cycling per peptide. Titration prompts on the dashboard when a step is due. Cycle off-weeks drop a peptide from the schedule automatically.</p>`;
-    profiles.forEach(u => {
-        const stack = u.peptide_type ? u.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
-        if (stack.length === 0) return;
-        const titration = u.titration_schedules || {};
-        const cycles = u.peptide_cycles || {};
-        const userWk = weekNum(u);
-        html += `<div class="bg-gray-800 rounded-lg p-3 mb-3">
-            <div class="font-bold text-amber-400 text-sm mb-1">${u.display_name}</div>
-            <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Current Week: ${userWk}</div>`;
-        stack.forEach(pep => {
-            const safePep = pep.replace(/'/g, "\\'");
-            const steps = Array.isArray(titration[pep]) ? titration[pep] : [];
-            const c = cycles[pep] || {};
-            const onCycleNow = isPeptideOnCycle(u, pep);
-            const cycleConfigured = c.on_weeks && c.off_weeks && c.anchor_date;
-            html += `<div class="bg-gray-900 border border-gray-700/40 rounded-lg p-3 mb-2">
-                <div class="font-bold text-gray-200 text-sm mb-2">${pep} ${cycleConfigured ? (onCycleNow ? '<span class="text-emerald-400 text-[10px] ml-1">CYCLE ON</span>' : '<span class="text-gray-500 text-[10px] ml-1">CYCLE OFF</span>') : ''}</div>
-
-                <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Titration steps</div>
-                <div class="space-y-1.5 mb-2">`;
-            if (steps.length === 0) {
-                html += `<div class="text-xs text-gray-600 italic">No titration steps. Stays at current dose.</div>`;
+            // --- Sub-section: Titration & Cycles ---
+            html += `<div>
+                <div class="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">&#x1F4C8; Titration &amp; Cycles</div>`;
+            if (stack.length === 0) {
+                html += `<div class="text-xs text-gray-600 italic">Add a peptide to set up titration.</div>`;
             } else {
-                steps.forEach((step, idx) => {
-                    const applied = (step.week <= userWk);
-                    html += `<div class="flex items-center gap-2">
-                        <span class="text-[10px] text-gray-500 w-10 shrink-0">Wk</span>
-                        <input type="number" class="input-field text-xs py-1.5" style="max-width:60px" value="${step.week || ''}" onchange="updateTitrationStep('${u.id}','${safePep}',${idx},'week',this.value)">
-                        <span class="text-[10px] text-gray-500 w-5 shrink-0">@</span>
-                        <input type="number" step="0.05" class="input-field text-xs py-1.5" style="max-width:80px" value="${step.mg || ''}" onchange="updateTitrationStep('${u.id}','${safePep}',${idx},'mg',this.value)">
-                        <span class="text-[10px] text-gray-500">mg</span>
-                        ${applied ? '<span class="text-[10px] text-emerald-400 ml-auto">due/done</span>' : '<span class="text-[10px] text-gray-600 ml-auto">future</span>'}
-                        <button onclick="removeTitrationStep('${u.id}','${safePep}',${idx})" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
+                stack.forEach(pep => {
+                    const safePep = pep.replace(/'/g, "\\'");
+                    const titration = u.titration_schedules || {};
+                    const cycles = u.peptide_cycles || {};
+                    const steps = Array.isArray(titration[pep]) ? titration[pep] : [];
+                    const c = cycles[pep] || {};
+                    const onCycleNow = isPeptideOnCycle(u, pep);
+                    const cycleConfigured = c.on_weeks && c.off_weeks && c.anchor_date;
+                    html += `<div class="bg-gray-900/60 border border-gray-800 rounded-lg p-2.5 mb-2">
+                        <div class="font-bold text-gray-200 text-sm mb-2">${pep} ${cycleConfigured ? (onCycleNow ? '<span class="text-emerald-400 text-[10px] ml-1">CYCLE ON</span>' : '<span class="text-gray-500 text-[10px] ml-1">CYCLE OFF</span>') : ''}</div>
+                        <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Steps</div>
+                        <div class="space-y-1.5 mb-2">`;
+                    if (steps.length === 0) {
+                        html += `<div class="text-[11px] text-gray-600 italic">No steps planned &mdash; stays at current dose.</div>`;
+                    } else {
+                        steps.forEach((step, idx) => {
+                            const applied = (step.week <= userWk);
+                            html += `<div class="flex items-center gap-2">
+                                <span class="text-[10px] text-gray-500 w-7 shrink-0">Wk</span>
+                                <input type="number" class="input-field text-xs py-1.5" style="max-width:55px" value="${step.week || ''}" onchange="updateTitrationStep('${u.id}','${safePep}',${idx},'week',this.value)">
+                                <span class="text-[10px] text-gray-500 w-4 shrink-0">@</span>
+                                <input type="number" step="0.05" class="input-field text-xs py-1.5" style="max-width:75px" value="${step.mg || ''}" onchange="updateTitrationStep('${u.id}','${safePep}',${idx},'mg',this.value)">
+                                <span class="text-[10px] text-gray-500">mg</span>
+                                ${applied ? '<span class="text-[10px] text-emerald-400 ml-auto">due</span>' : '<span class="text-[10px] text-gray-600 ml-auto">future</span>'}
+                                <button onclick="removeTitrationStep('${u.id}','${safePep}',${idx})" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
+                            </div>`;
+                        });
+                    }
+                    html += `</div>
+                        <button onclick="addTitrationStep('${u.id}','${safePep}')" class="text-[11px] text-amber-400 hover:text-amber-300 bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded transition mb-3">+ Add step</button>
+                        <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-1 mt-2">Cycle</div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div>
+                                <label class="text-[10px] text-gray-500">On wks</label>
+                                <input type="number" min="0" class="input-field text-xs py-1.5" value="${c.on_weeks || ''}" placeholder="e.g. 5" onchange="updateCycleField('${u.id}','${safePep}','on_weeks',this.value)">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-gray-500">Off wks</label>
+                                <input type="number" min="0" class="input-field text-xs py-1.5" value="${c.off_weeks || ''}" placeholder="e.g. 4" onchange="updateCycleField('${u.id}','${safePep}','off_weeks',this.value)">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-gray-500">Anchor</label>
+                                <input type="date" class="input-field text-xs py-1.5" value="${c.anchor_date || ''}" onchange="updateCycleField('${u.id}','${safePep}','anchor_date',this.value)">
+                            </div>
+                        </div>
                     </div>`;
                 });
             }
-            html += `</div>
-                <button onclick="addTitrationStep('${u.id}','${safePep}')" class="text-xs text-amber-400 hover:text-amber-300 bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded transition mb-3">+ Add step</button>
+            html += `</div>`;
 
-                <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-1 mt-2">Cycle</div>
-                <div class="grid grid-cols-3 gap-2">
-                    <div>
-                        <label class="text-[10px] text-gray-500">On weeks</label>
-                        <input type="number" min="0" class="input-field text-xs py-1.5" value="${c.on_weeks || ''}" placeholder="e.g. 5" onchange="updateCycleField('${u.id}','${safePep}','on_weeks',this.value)">
-                    </div>
-                    <div>
-                        <label class="text-[10px] text-gray-500">Off weeks</label>
-                        <input type="number" min="0" class="input-field text-xs py-1.5" value="${c.off_weeks || ''}" placeholder="e.g. 4" onchange="updateCycleField('${u.id}','${safePep}','off_weeks',this.value)">
-                    </div>
-                    <div>
-                        <label class="text-[10px] text-gray-500">Anchor</label>
-                        <input type="date" class="input-field text-xs py-1.5" value="${c.anchor_date || ''}" onchange="updateCycleField('${u.id}','${safePep}','anchor_date',this.value)">
-                    </div>
-                </div>
-            </div>`;
-        });
-        html += `</div>`;
+            html += `</div>`; // end body
+        }
+
+        html += `</div>`; // end card
     });
-    html += `</div>`;
+
+    return html;
+}
+
+// ─── Lab Tab: Inventory ─────────────────────────────────────────────
+function renderLabInventory(inv, types) {
+    let html = '';
 
     // === INVENTORY ===
-    html += `<div class="card"><div class="section-title">Unmixed Vial Inventory</div><div class="space-y-3">`;
-    inv.forEach(item => {
-        html += `<div class="flex items-center justify-between bg-gray-800 rounded-lg p-3">
-            <span class="text-sm text-gray-300 flex-1">${item.item_name}</span>
-            <div class="flex items-center gap-3">
-                <button onclick="changeInventory('${item.id}',${item.count - 1})" class="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-lg text-xl font-bold text-white transition active:scale-95">&minus;</button>
-                <span class="text-xl font-bold text-white w-8 text-center">${item.count}</span>
-                <button onclick="changeInventory('${item.id}',${item.count + 1})" class="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-lg text-xl font-bold text-white transition active:scale-95">+</button>
-            </div></div>`;
-    });
-    html += '</div></div>';
+    html += `<div class="card"><div class="section-title">Unmixed Vial Inventory</div>`;
+    if (inv.length === 0) {
+        html += labEmptyState('&#x1F4E6;', 'No inventory tracked', 'Inventory items appear once added to the database.');
+    } else {
+        html += `<div class="space-y-3">`;
+        inv.forEach(item => {
+            const low = item.count <= 1;
+            html += `<div class="flex items-center justify-between rounded-lg p-3 ${low ? 'bg-red-950/30 border border-red-900/50' : 'bg-gray-800'}">
+                <div class="flex-1">
+                    <span class="text-sm text-gray-300">${item.item_name}</span>
+                    ${low ? '<div class="text-[10px] text-red-400 font-bold uppercase tracking-wide mt-0.5">Low stock</div>' : ''}
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="changeInventory('${item.id}',${item.count - 1})" class="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-lg text-xl font-bold text-white transition active:scale-95">&minus;</button>
+                    <span class="text-xl font-bold text-white w-8 text-center">${item.count}</span>
+                    <button onclick="changeInventory('${item.id}',${item.count + 1})" class="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-lg text-xl font-bold text-white transition active:scale-95">+</button>
+                </div></div>`;
+        });
+        html += `</div>`;
+    }
+    html += '</div>';
 
     // === MANAGE PEPTIDES ===
     html += `<div class="card"><div class="section-title">Manage Peptide Types</div>
-        <p class="text-xs text-gray-500 mb-3">Add or remove peptide types available across the app.</p><div class="space-y-2 mb-3">`;
-    types.forEach(t => {
-        html += `<div class="flex items-center justify-between bg-gray-800 rounded-lg p-3"><div>
-            <span class="text-sm text-gray-200 font-medium">${t.name}</span>
-            <span class="text-xs text-gray-500 ml-2">Vial: ${t.vial_size}</span></div>
-            <button onclick="removePeptideType('${t.id}','${t.name}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&times;</button></div>`;
-    });
-    html += `</div><div class="flex gap-2">
+        <p class="text-xs text-gray-500 mb-3">Add or remove peptide types available across the app.</p>`;
+    if (types.length === 0) {
+        html += labEmptyState('&#x1F4DD;', 'No peptide types yet', 'Add your first peptide type using the form below.');
+    } else {
+        html += `<div class="space-y-2 mb-3">`;
+        types.forEach(t => {
+            html += `<div class="flex items-center justify-between bg-gray-800 rounded-lg p-3"><div>
+                <span class="text-sm text-gray-200 font-medium">${t.name}</span>
+                <span class="text-xs text-gray-500 ml-2">Vial: ${t.vial_size}</span></div>
+                <button onclick="removePeptideType('${t.id}','${t.name}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&times;</button></div>`;
+        });
+        html += `</div>`;
+    }
+    html += `<div class="flex gap-2">
         <input type="text" class="input-field text-sm py-2 flex-1" id="new-pep-name" placeholder="Peptide name">
         <input type="text" class="input-field text-sm py-2" style="max-width:80px" id="new-pep-size" placeholder="e.g. 10mg">
         <button onclick="addPeptideType()" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition active:scale-95 shrink-0">Add</button>
     </div></div>`;
 
-    document.getElementById('lab-content').innerHTML = html;
+    return html;
+}
+
+// ─── Lab helpers: empty state, filter, user expand ──────────────────
+function labEmptyState(icon, title, sub) {
+    return `<div class="bg-gray-900/40 border border-dashed border-gray-700 rounded-xl p-5 text-center">
+        <div class="text-3xl mb-2">${icon}</div>
+        <div class="text-sm text-gray-200 font-semibold mb-1">${title}</div>
+        <div class="text-xs text-gray-500">${sub}</div>
+    </div>`;
+}
+
+function applyLabFilters() {
+    const masterList = document.getElementById('lab-master-list');
+    if (masterList) {
+        const q = labMasterFilter.toLowerCase().trim();
+        masterList.querySelectorAll('[data-pep]').forEach(el => {
+            el.style.display = (!q || (el.dataset.pep||'').toLowerCase().includes(q)) ? '' : 'none';
+        });
+    }
+    const penList = document.getElementById('lab-pen-list');
+    if (penList) {
+        const q = labPenFilter.toLowerCase().trim();
+        penList.querySelectorAll('[data-pep]').forEach(el => {
+            el.style.display = (!q || (el.dataset.pep||'').toLowerCase().includes(q)) ? '' : 'none';
+        });
+    }
+}
+
+function toggleLabUser(userId) {
+    labOpenUser = labOpenUser === userId ? null : userId;
+    renderLab();
+    if (labOpenUser) setTimeout(() => {
+        const el = document.getElementById('lab-user-' + userId);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+}
+
+// Quick-switch chip: jump to People tab if needed, expand user, scroll into view.
+function focusLabUser(userId) {
+    if (currentLabTab !== 'people') switchLabTab('people');
+    labOpenUser = userId;
+    renderLab();
+    setTimeout(() => {
+        const el = document.getElementById('lab-user-' + userId);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
 }
 
 // Lab actions — Mixing Calculator
