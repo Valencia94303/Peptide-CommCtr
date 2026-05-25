@@ -3029,10 +3029,13 @@ async function updateCycleField(userId, peptide, field, value) {
         } else if (field === 'anchor_date') {
             c[field] = value || null;
         }
-        // Drop the entry entirely if it's effectively empty (always-on).
-        const hasMeaningfulCycle = c.on_weeks && c.off_weeks && c.anchor_date;
-        if (hasMeaningfulCycle) cycles[peptide] = c;
-        else delete cycles[peptide];
+        // Persist partial entries so the user can fill the three fields in
+        // any order without each blur wiping the previous one. Only drop the
+        // entry when *all three* are empty (user is clearing the cycle).
+        // isPeptideOnCycle() already treats incomplete entries as always-on.
+        const allEmpty = !c.on_weeks && !c.off_weeks && !c.anchor_date;
+        if (allEmpty) delete cycles[peptide];
+        else cycles[peptide] = c;
         await updateProfileField(userId, { peptide_cycles: cycles });
         await loadLab(true);
         if (userId === currentSession.user.id) await loadDashboard();
