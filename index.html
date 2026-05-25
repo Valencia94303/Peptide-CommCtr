@@ -802,7 +802,8 @@ async function insertPen(masterVialId, peptide, mlFromMaster, mlFreshWater, tota
         ml_from_master: mlFromMaster, ml_fresh_water: mlFreshWater,
         total_ml: totalMl, mg_content: mgContent,
         concentration, filled_date: filledDate,
-        assigned_to: assignedTo || null
+        assigned_to: assignedTo || null,
+        remaining_ml: totalMl
     });
     if (error) throw error;
 }
@@ -824,6 +825,13 @@ async function reassignPen(id, newUserId) {
 
 async function sharePen(id) {
     const { error } = await sb.from('pens').update({ shared: true }).eq('id', id);
+    if (error) throw error;
+}
+
+// Generic pen update — used by the Edit Pen modal's "Edit fields" escape
+// hatch and by the dilute/topup/adjust helpers below.
+async function updatePenFields(id, fields) {
+    const { error } = await sb.from('pens').update(fields).eq('id', id);
     if (error) throw error;
 }
 
@@ -2090,15 +2098,22 @@ function renderLabMix(masters, pens, types, profiles) {
             const age = daysSince(pen.filled_date), expired = age > 28, expiring = age >= 25;
             const ownerName = pen.shared ? 'shared' : (pen.assigned_to ? (profiles.find(u=>u.id===pen.assigned_to)?.display_name || '') : 'unassigned');
             const statusColor = pen.shared ? 'text-emerald-400' : (pen.assigned_to ? 'text-amber-400' : 'text-gray-600');
+            const curRemaining = (pen.remaining_ml == null) ? Number(pen.total_ml) : Number(pen.remaining_ml);
+            const remainingPct = Number(pen.total_ml) > 0 ? Math.max(0, Math.min(100, (curRemaining / Number(pen.total_ml)) * 100)) : 0;
             html += `<div data-pep="${pen.peptide} ${ownerName}" class="bg-gray-800 rounded-lg p-3 mb-2 ${expired?'border-2 border-red-600 expiry-pulse':expiring?'border border-yellow-600':'border border-gray-700'}">
-                <div class="flex justify-between items-start"><div>
+                <div class="flex justify-between items-start"><div class="flex-1 min-w-0">
                     <div class="font-bold text-white">${pen.peptide} <span class="text-xs text-gray-500">Pen</span> <span class="text-xs ${statusColor}">${ownerName}</span></div>
                     <div class="text-xs text-gray-400">${pen.mg_content}mg in ${pen.total_ml}mL &bull; <span class="text-amber-400 font-bold">${pen.concentration} mg/mL</span></div>
                     <div class="text-xs text-gray-400">${pen.ml_from_master}mL master + ${pen.ml_fresh_water}mL water</div>
-                    <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'}">
+                    <div class="text-xs text-gray-400 mt-0.5">Remaining: ${curRemaining.toFixed(2)}mL of ${pen.total_ml}mL (${remainingPct.toFixed(0)}%)</div>
+                    <div class="w-full bg-gray-700 rounded-full h-1 mt-1"><div class="bg-emerald-500 h-1 rounded-full" style="width:${remainingPct}%"></div></div>
+                    <div class="text-xs ${expired?'text-red-400 font-bold':expiring?'text-yellow-400':'text-gray-500'} mt-1">
                         Filled: ${formatDate(pen.filled_date)} (${age}d) ${expired?' &mdash; EXPIRED':expiring?' &mdash; EXPIRING SOON':''}</div>
                 </div>
-                <button onclick="depletePen('${pen.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&#x1F5D1;</button></div>
+                <div class="flex flex-col gap-1 shrink-0 ml-2">
+                    <button onclick="openPenEditModal('${pen.id}')" class="text-gray-500 hover:text-amber-400 text-sm px-2 py-1" title="Dilute / top up / edit">&#x270F;&#xFE0F;</button>
+                    <button onclick="depletePen('${pen.id}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1" title="Mark depleted">&#x1F5D1;</button>
+                </div></div>
                 <div class="flex gap-2 mt-2 pt-2 border-t border-gray-700">
                     <select class="input-field text-xs py-1.5 flex-1" onchange="handlePenAction('${pen.id}', this.value); this.value=''">
                         <option value="">Reassign&hellip;</option>
@@ -2553,6 +2568,242 @@ async function handlePenAction(penId, action) {
         }
         await loadLab(true);
     } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ─── Pen edit actions ───────────────────────────────────────────────
+// All four actions update the pen in-place. filled_date is intentionally
+// preserved — the peptide molecules don't get younger from added water.
+
+// Dilute: add fresh BAC water. mg_content stays; total_ml, concentration,
+// ml_fresh_water, and remaining_ml all increase by addMl.
+async function dilutePenAction(penId, addMl) {
+    const ml = parseFloat(addMl);
+    if (!ml || ml <= 0) throw new Error('Enter a positive number of mL.');
+    const pen = (cachedPens || []).concat(cachedMyPens || []).find(p => p.id === penId);
+    if (!pen) throw new Error('Pen not found in cache.');
+    const newTotal = parseFloat((Number(pen.total_ml) + ml).toFixed(3));
+    const newConc = parseFloat((Number(pen.mg_content) / newTotal).toFixed(3));
+    const newFresh = parseFloat((Number(pen.ml_fresh_water) + ml).toFixed(3));
+    const curRemaining = (pen.remaining_ml == null) ? Number(pen.total_ml) : Number(pen.remaining_ml);
+    const newRemaining = parseFloat((curRemaining + ml).toFixed(3));
+    await updatePenFields(penId, {
+        total_ml: newTotal, concentration: newConc,
+        ml_fresh_water: newFresh, remaining_ml: newRemaining
+    });
+}
+
+// Top up: draw extra mL from a master vial. Updates pen (adds both mg and
+// mL, recomputes concentration) and decrements the master's remaining_ml.
+// Done sequentially — if the master update fails, the pen update is rolled
+// back so the household can't double-spend a master.
+async function topUpPenAction(penId, masterId, addMl) {
+    const ml = parseFloat(addMl);
+    if (!ml || ml <= 0) throw new Error('Enter a positive number of mL.');
+    const pen = (cachedPens || []).concat(cachedMyPens || []).find(p => p.id === penId);
+    if (!pen) throw new Error('Pen not found in cache.');
+    const master = (cachedMasters || []).find(m => m.id === masterId);
+    if (!master) throw new Error('Select a master vial first.');
+    if (master.peptide !== pen.peptide) throw new Error(`Master peptide (${master.peptide}) doesn't match pen peptide (${pen.peptide}).`);
+    if (ml > Number(master.remaining_ml)) throw new Error(`Master only has ${master.remaining_ml}mL left.`);
+
+    const addedMg = parseFloat((Number(master.concentration) * ml).toFixed(3));
+    const newTotal = parseFloat((Number(pen.total_ml) + ml).toFixed(3));
+    const newMg = parseFloat((Number(pen.mg_content) + addedMg).toFixed(3));
+    const newConc = parseFloat((newMg / newTotal).toFixed(3));
+    const newFromMaster = parseFloat((Number(pen.ml_from_master) + ml).toFixed(3));
+    const curRemaining = (pen.remaining_ml == null) ? Number(pen.total_ml) : Number(pen.remaining_ml);
+    const newPenRemaining = parseFloat((curRemaining + ml).toFixed(3));
+    const newMasterRemaining = parseFloat((Number(master.remaining_ml) - ml).toFixed(3));
+
+    // Snapshot pen state so we can roll back if the master update fails.
+    const prev = {
+        total_ml: pen.total_ml, mg_content: pen.mg_content, concentration: pen.concentration,
+        ml_from_master: pen.ml_from_master, remaining_ml: pen.remaining_ml
+    };
+    await updatePenFields(penId, {
+        total_ml: newTotal, mg_content: newMg, concentration: newConc,
+        ml_from_master: newFromMaster, remaining_ml: newPenRemaining
+    });
+    try {
+        await updateMasterRemaining(masterId, newMasterRemaining);
+    } catch (e) {
+        // Best-effort rollback so we don't leave double-counted volume.
+        await updatePenFields(penId, prev).catch(() => {});
+        throw new Error('Master update failed; pen change reverted. (' + e.message + ')');
+    }
+}
+
+// Adjust: free-set remaining_ml. Useful when something spills or a shot
+// isn't logged, or to mark a pen as essentially empty without depleting.
+async function adjustPenRemainingAction(penId, newMl) {
+    const ml = parseFloat(newMl);
+    if (isNaN(ml) || ml < 0) throw new Error('Remaining mL must be 0 or higher.');
+    await updatePenFields(penId, { remaining_ml: parseFloat(ml.toFixed(3)) });
+}
+
+// Free-form edit: trust the admin to enter consistent values. Each field is
+// optional — only the keys present in `fields` are written.
+async function editPenFieldsAction(penId, fields) {
+    const writable = ['mg_content','total_ml','concentration','ml_from_master','ml_fresh_water','remaining_ml','filled_date'];
+    const payload = {};
+    writable.forEach(k => {
+        if (fields[k] === undefined || fields[k] === '' || fields[k] === null) return;
+        payload[k] = (k === 'filled_date') ? fields[k] : parseFloat(fields[k]);
+    });
+    if (Object.keys(payload).length === 0) throw new Error('No changes to save.');
+    await updatePenFields(penId, payload);
+}
+
+// ── Edit Pen modal ───────────────────────────────────────────────────
+function openPenEditModal(penId) {
+    const pen = (cachedPens || []).concat(cachedMyPens || []).find(p => p.id === penId);
+    if (!pen) { alert('Pen not found.'); return; }
+    const masters = (cachedMasters || []).filter(m => m.peptide === pen.peptide && Number(m.remaining_ml) > 0);
+    const curRemaining = (pen.remaining_ml == null) ? Number(pen.total_ml) : Number(pen.remaining_ml);
+    const myDose = (currentProfile?.current_doses || {})[pen.peptide];
+    const previewLine = myDose ? `<div class="text-[10px] text-gray-500 mt-1">Your dose ${myDose}mg &rarr; <span class="text-amber-400 font-bold">${calcUnitsFromConc(myDose, pen.concentration)} units</span> at current ${pen.concentration} mg/mL</div>` : '';
+
+    let html = `<div class="text-center mb-3">
+        <div class="text-2xl mb-1">&#x1F58A;&#xFE0F;</div>
+        <div class="text-base font-bold text-amber-400">Edit ${pen.peptide} pen</div>
+    </div>
+    <div class="bg-gray-800 rounded-lg p-3 mb-4 text-xs space-y-0.5">
+        <div class="flex justify-between"><span class="text-gray-500">mg in pen</span><span class="text-gray-200 font-bold">${pen.mg_content} mg</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Total volume</span><span class="text-gray-200 font-bold">${pen.total_ml} mL</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Concentration</span><span class="text-amber-400 font-bold">${pen.concentration} mg/mL</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Remaining</span><span class="text-gray-200 font-bold">${curRemaining} mL</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">From master / fresh</span><span class="text-gray-200">${pen.ml_from_master} / ${pen.ml_fresh_water} mL</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Filled</span><span class="text-gray-200">${formatDate(pen.filled_date)} (${daysSince(pen.filled_date)}d ago)</span></div>
+        ${previewLine}
+    </div>
+
+    <div class="space-y-3">
+
+        <!-- 1. Dilute -->
+        <div class="bg-gray-900/60 border border-gray-700 rounded-lg p-3">
+            <div class="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">&#x1F4A7; Dilute (add BAC water)</div>
+            <div class="flex items-end gap-2">
+                <div class="flex-1">
+                    <label class="text-[10px] text-gray-500">Add mL BAC water</label>
+                    <input id="pen-dilute-ml" type="number" inputmode="decimal" step="0.1" min="0" placeholder="0.5" class="input-field text-sm py-1.5" oninput="penEditPreview('dilute')">
+                </div>
+                <button onclick="runPenEdit('dilute', '${pen.id}')" class="bg-blue-700 hover:bg-blue-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95 shrink-0">Dilute</button>
+            </div>
+            <div id="pen-dilute-preview" class="text-[11px] text-gray-500 mt-1.5"></div>
+        </div>
+
+        <!-- 2. Top up -->
+        <div class="bg-gray-900/60 border border-gray-700 rounded-lg p-3">
+            <div class="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-2">&#x2795; Top up (draw from master)</div>
+            ${masters.length === 0
+                ? `<div class="text-[11px] text-gray-600 italic">No ${pen.peptide} master with stock available.</div>`
+                : `<div class="space-y-2">
+                    <select id="pen-topup-master" class="input-field text-sm py-1.5" oninput="penEditPreview('topup')">
+                        <option value="">Select master vial...</option>
+                        ${masters.map(m => `<option value="${m.id}" data-conc="${m.concentration}" data-remaining="${m.remaining_ml}">${m.peptide} &mdash; ${m.concentration} mg/mL (${m.remaining_ml}mL left)</option>`).join('')}
+                    </select>
+                    <div class="flex items-end gap-2">
+                        <div class="flex-1">
+                            <label class="text-[10px] text-gray-500">mL to draw</label>
+                            <input id="pen-topup-ml" type="number" inputmode="decimal" step="0.1" min="0" placeholder="0.5" class="input-field text-sm py-1.5" oninput="penEditPreview('topup')">
+                        </div>
+                        <button onclick="runPenEdit('topup', '${pen.id}')" class="bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95 shrink-0">Top up</button>
+                    </div>
+                    <div id="pen-topup-preview" class="text-[11px] text-gray-500"></div>
+                </div>`
+            }
+        </div>
+
+        <!-- 3. Adjust remaining -->
+        <div class="bg-gray-900/60 border border-gray-700 rounded-lg p-3">
+            <div class="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">&#x1F4CF; Adjust remaining stock</div>
+            <div class="flex items-end gap-2">
+                <div class="flex-1">
+                    <label class="text-[10px] text-gray-500">Set remaining to (mL)</label>
+                    <input id="pen-adjust-ml" type="number" inputmode="decimal" step="0.1" min="0" value="${curRemaining}" class="input-field text-sm py-1.5">
+                </div>
+                <button onclick="runPenEdit('adjust', '${pen.id}')" class="bg-amber-700 hover:bg-amber-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95 shrink-0">Save</button>
+            </div>
+        </div>
+
+        <!-- 4. Edit fields (escape hatch) -->
+        <details class="bg-gray-900/60 border border-gray-700 rounded-lg p-3">
+            <summary class="text-xs font-bold text-red-400 uppercase tracking-wider cursor-pointer select-none">&#x270F;&#xFE0F; Edit fields directly</summary>
+            <div class="text-[11px] text-gray-500 mt-2 mb-2">Changes save as-entered. No safety net &mdash; mg / total / concentration must stay consistent yourself.</div>
+            <div class="grid grid-cols-2 gap-2">
+                <div><label class="text-[10px] text-gray-500">mg_content</label><input id="pen-edit-mg_content" type="number" inputmode="decimal" step="0.01" value="${pen.mg_content}" class="input-field text-sm py-1.5"></div>
+                <div><label class="text-[10px] text-gray-500">total_ml</label><input id="pen-edit-total_ml" type="number" inputmode="decimal" step="0.1" value="${pen.total_ml}" class="input-field text-sm py-1.5"></div>
+                <div><label class="text-[10px] text-gray-500">concentration (mg/mL)</label><input id="pen-edit-concentration" type="number" inputmode="decimal" step="0.01" value="${pen.concentration}" class="input-field text-sm py-1.5"></div>
+                <div><label class="text-[10px] text-gray-500">remaining_ml</label><input id="pen-edit-remaining_ml" type="number" inputmode="decimal" step="0.1" value="${curRemaining}" class="input-field text-sm py-1.5"></div>
+                <div><label class="text-[10px] text-gray-500">ml_from_master</label><input id="pen-edit-ml_from_master" type="number" inputmode="decimal" step="0.1" value="${pen.ml_from_master}" class="input-field text-sm py-1.5"></div>
+                <div><label class="text-[10px] text-gray-500">ml_fresh_water</label><input id="pen-edit-ml_fresh_water" type="number" inputmode="decimal" step="0.1" value="${pen.ml_fresh_water}" class="input-field text-sm py-1.5"></div>
+                <div class="col-span-2"><label class="text-[10px] text-gray-500">filled_date</label><input id="pen-edit-filled_date" type="date" value="${pen.filled_date}" class="input-field text-sm py-1.5"></div>
+            </div>
+            <button onclick="runPenEdit('fields', '${pen.id}')" class="btn-secondary mt-3">Save fields</button>
+        </details>
+    </div>
+
+    <button onclick="closeModal()" class="btn-secondary mt-4">Close</button>`;
+    showModal(html);
+}
+
+// Live preview for the dilute and top-up forms inside the Edit Pen modal.
+function penEditPreview(kind) {
+    const penId = document.querySelector('[onclick^="runPenEdit"]')?.getAttribute('onclick')?.match(/'([^']+)'\)$/)?.[1];
+    // The buttons themselves are per-pen; we read the modal's known state from the dialog itself.
+    // (Live preview is informational; the actual action looks up the pen again via cache.)
+    if (kind === 'dilute') {
+        const target = document.getElementById('pen-dilute-preview');
+        const ml = parseFloat(document.getElementById('pen-dilute-ml')?.value);
+        if (!target || !ml || ml <= 0) { if (target) target.textContent = ''; return; }
+        // pull current state from the static info block
+        const mg = parseFloat(document.querySelector('#modal-content .bg-gray-800 .flex:nth-child(1) span:last-child')?.textContent);
+        const total = parseFloat(document.querySelector('#modal-content .bg-gray-800 .flex:nth-child(2) span:last-child')?.textContent);
+        if (!mg || !total) return;
+        const newTotal = (total + ml).toFixed(2);
+        const newConc = (mg / (total + ml)).toFixed(2);
+        target.innerHTML = `New total <span class="text-gray-300 font-bold">${newTotal}mL</span> &bull; concentration <span class="text-blue-400 font-bold">${newConc} mg/mL</span>`;
+    } else if (kind === 'topup') {
+        const target = document.getElementById('pen-topup-preview');
+        const select = document.getElementById('pen-topup-master');
+        const ml = parseFloat(document.getElementById('pen-topup-ml')?.value);
+        if (!target || !select || !ml || ml <= 0 || !select.value) { if (target) target.textContent = ''; return; }
+        const opt = select.options[select.selectedIndex];
+        const masterConc = parseFloat(opt.dataset.conc);
+        const mg = parseFloat(document.querySelector('#modal-content .bg-gray-800 .flex:nth-child(1) span:last-child')?.textContent);
+        const total = parseFloat(document.querySelector('#modal-content .bg-gray-800 .flex:nth-child(2) span:last-child')?.textContent);
+        if (!mg || !total || !masterConc) return;
+        const newMg = (mg + masterConc * ml).toFixed(2);
+        const newTotal = (total + ml).toFixed(2);
+        const newConc = (parseFloat(newMg) / parseFloat(newTotal)).toFixed(2);
+        target.innerHTML = `New content <span class="text-gray-300 font-bold">${newMg}mg / ${newTotal}mL</span> &bull; concentration <span class="text-emerald-400 font-bold">${newConc} mg/mL</span>`;
+    }
+}
+
+// Single dispatcher used by all four "Save" / "Apply" buttons in the modal.
+async function runPenEdit(kind, penId) {
+    try {
+        if (kind === 'dilute') {
+            await dilutePenAction(penId, document.getElementById('pen-dilute-ml').value);
+        } else if (kind === 'topup') {
+            await topUpPenAction(penId, document.getElementById('pen-topup-master').value, document.getElementById('pen-topup-ml').value);
+        } else if (kind === 'adjust') {
+            await adjustPenRemainingAction(penId, document.getElementById('pen-adjust-ml').value);
+        } else if (kind === 'fields') {
+            await editPenFieldsAction(penId, {
+                mg_content: document.getElementById('pen-edit-mg_content').value,
+                total_ml: document.getElementById('pen-edit-total_ml').value,
+                concentration: document.getElementById('pen-edit-concentration').value,
+                ml_from_master: document.getElementById('pen-edit-ml_from_master').value,
+                ml_fresh_water: document.getElementById('pen-edit-ml_fresh_water').value,
+                remaining_ml: document.getElementById('pen-edit-remaining_ml').value,
+                filled_date: document.getElementById('pen-edit-filled_date').value,
+            });
+        }
+        closeModal();
+        await loadLab(true);
+        await loadDashboard();
+    } catch (e) { alert(e.message); }
 }
 
 async function changeInventory(id, newCount) {
