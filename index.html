@@ -465,18 +465,29 @@ function getBaseSchedule(profile) {
 
 function getSchedule(profile) {
     const base = getBaseSchedule(profile);
-    const override = profile?.schedule_override;
-    if (!override || typeof override !== 'object') return base;
+    const override = profile && profile.schedule_override;
+    const hasOverride = override && typeof override === 'object';
+    // When the user has a configured stack, restrict shots to peptides in it.
+    // This way removing a peptide via Dose Management also drops it from the schedule.
+    const stack = (profile && profile.peptide_type)
+        ? profile.peptide_type.split(' + ').map(s => s.trim()).filter(Boolean)
+        : [];
+    const filterShots = (shots) => {
+        if (!Array.isArray(shots)) return [];
+        if (stack.length === 0) return shots.slice();
+        return shots.filter(s => stack.includes(s));
+    };
     const merged = {};
     for (let d = 0; d < 7; d++) {
         const baseDay = base[d] || { window: 'morning', shots: [], workout: '', type: 'rest', fasting: '' };
-        const ov = override[d] || override[String(d)];
-        if (!ov) { merged[d] = baseDay; continue; }
-        merged[d] = {
+        const ov = hasOverride ? (override[d] || override[String(d)]) : null;
+        const day = {
             ...baseDay,
-            ...(ov.window ? { window: ov.window } : {}),
-            ...(Array.isArray(ov.shots) ? { shots: ov.shots } : {})
+            ...(ov && ov.window ? { window: ov.window } : {}),
+            ...(ov && Array.isArray(ov.shots) ? { shots: ov.shots } : {})
         };
+        day.shots = filterShots(day.shots);
+        merged[d] = day;
     }
     return merged;
 }
@@ -2107,29 +2118,33 @@ async function getUserScheduleOverride(userId) {
     if (!user) return null;
     const base = getBaseSchedule(user);
     const override = (user.schedule_override && typeof user.schedule_override === 'object') ? { ...user.schedule_override } : {};
+    const stack = user.peptide_type
+        ? user.peptide_type.split(' + ').map(s => s.trim()).filter(Boolean)
+        : [];
     // Normalize keys to numeric.
     const norm = {};
     for (let d = 0; d < 7; d++) {
         const ov = (override[d] != null) ? override[d] : override[String(d)];
         if (ov) norm[d] = { ...ov };
     }
-    return { user, base, override: norm };
+    return { user, base, override: norm, stack };
 }
 
-function _materializeDay(base, override, d) {
+function _materializeDay(base, override, d, stack) {
     const baseDay = base[d] || { window: 'morning', shots: [] };
     const ov = override[d] || {};
-    return {
-        window: ov.window || baseDay.window,
-        shots: Array.isArray(ov.shots) ? ov.shots.slice() : (baseDay.shots || []).slice()
-    };
+    const rawShots = Array.isArray(ov.shots) ? ov.shots.slice() : (baseDay.shots || []).slice();
+    const filtered = (stack && stack.length > 0)
+        ? rawShots.filter(s => stack.includes(s))
+        : rawShots;
+    return { window: ov.window || baseDay.window, shots: filtered };
 }
 
 async function updateUserScheduleWindow(userId, dayIdx, newWindow) {
     try {
         const ctx = await getUserScheduleOverride(userId);
         if (!ctx) return;
-        const cur = _materializeDay(ctx.base, ctx.override, dayIdx);
+        const cur = _materializeDay(ctx.base, ctx.override, dayIdx, ctx.stack);
         cur.window = newWindow;
         ctx.override[dayIdx] = cur;
         await updateProfileField(userId, { schedule_override: ctx.override });
@@ -2142,7 +2157,7 @@ async function toggleUserScheduleShot(userId, dayIdx, peptide) {
     try {
         const ctx = await getUserScheduleOverride(userId);
         if (!ctx) return;
-        const cur = _materializeDay(ctx.base, ctx.override, dayIdx);
+        const cur = _materializeDay(ctx.base, ctx.override, dayIdx, ctx.stack);
         const i = cur.shots.indexOf(peptide);
         if (i >= 0) cur.shots.splice(i, 1); else cur.shots.push(peptide);
         ctx.override[dayIdx] = cur;
