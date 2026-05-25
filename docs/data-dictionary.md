@@ -133,6 +133,8 @@ primary key is the same UUID as `auth.users.id`, establishing a 1:1 relationship
 | program_start | date | -- | current_date | Date the user began the peptide program |
 | current_doses | jsonb | -- | '{}' | Active dose map keyed by peptide name |
 | schedule_override | jsonb | -- | NULL | Per-day overrides for the base schedule (Migration 007). Null = use defaults. |
+| titration_schedules | jsonb | -- | NULL | Per-peptide dose escalation steps (Migration 008). |
+| peptide_cycles | jsonb | -- | NULL | Per-peptide on/off cycle config (Migration 008). |
 | created_at | timestamptz | -- | now() | Row creation timestamp |
 
 ### daily_logs
@@ -152,6 +154,10 @@ One row per user per calendar day. The composite unique constraint on
 | fiber | numeric | -- | NULL | Grams of fiber consumed |
 | shots | jsonb | -- | '{}' | Injection log for the day (see JSONB schema below) |
 | workout | jsonb | -- | '{"completed":false,"notes":""}' | Workout completion flag and free-text notes |
+| mood | smallint | -- | NULL | Daily mood rating 1–5 (Migration 008) |
+| energy | smallint | -- | NULL | Daily energy rating 1–5 (Migration 008) |
+| nsv | text | -- | NULL | Non-scale victory text for the day (Migration 008) |
+| notes | text | -- | NULL | Free-form journal entry (Migration 008) |
 | created_at | timestamptz | -- | now() | Row creation timestamp |
 | updated_at | timestamptz | -- | now() | Last modification timestamp |
 

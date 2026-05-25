@@ -116,6 +116,36 @@ Weekly schedules used to live as hardcoded JS constants (`GRUMPY_SCHEDULE`, `KAR
 
 ---
 
+## Migration 008 -- Titration, Cycles, and Daily Check-In
+
+**File:** `docs/migration-008-titration-cycles-checkin.sql`
+**Date:** 2026-05-25
+
+### Rationale
+
+Three Phase 2 features wanted small schema additions, so they were bundled into a single migration to keep deploys cheap.
+
+1. **Dose titration schedules.** GLP-1 protocols (Tirzepatide, Retatrutide) escalate in stepped fashion. The admin defines a per-peptide list of `{ week, mg }` steps; the dashboard surfaces a "Time to step up" banner when the user reaches a scheduled week and their `current_doses` value lags.
+2. **Peptide cycles.** Many peptides (MOTS-c is the canonical example) are run on/off for tissue tolerance. Admin defines `{ on_weeks, off_weeks, anchor_date }`. `getSchedule()` automatically drops the peptide on days that fall inside an off-week.
+3. **Daily check-in fields.** Mood, energy, non-scale-victory text, and free-form notes per day. Surfaced as a dashboard card; powers future trend analysis and the upcoming AI coach.
+
+### What it changes
+
+- `profiles.titration_schedules jsonb` (nullable). Map of peptide → step array.
+- `profiles.peptide_cycles jsonb` (nullable). Map of peptide → cycle config.
+- `daily_logs.mood smallint`, `daily_logs.energy smallint`: 1–5 ratings, nullable.
+- `daily_logs.nsv text`, `daily_logs.notes text`: free-form text, nullable.
+
+### Impact on application code
+
+- New helpers: `getDueTitrations(profile)`, `isPeptideOnCycle(profile, peptide, refDate)`.
+- `getSchedule()` now filters per-peptide cycle on top of the stack filter from Migration 007.
+- Dashboard renders a titration banner (with Apply / Not yet) and a Daily Check-In card.
+- Admin Lab gains a "Titration & Cycles" card per user, per peptide.
+- Backup payload includes the new columns automatically (it dumps the whole row).
+
+---
+
 ## Writing New Migrations
 
 ### Naming convention

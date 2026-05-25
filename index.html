@@ -471,7 +471,25 @@ function getBaseSchedule(profile) {
     return GENERIC_SCHEDULE;
 }
 
-function getSchedule(profile) {
+// True if a peptide is in its "on" phase relative to the user's cycle config.
+// If no cycle is configured for the peptide, it's always on.
+function isPeptideOnCycle(profile, peptide, referenceDate) {
+    const cycles = profile && profile.peptide_cycles;
+    const c = cycles && cycles[peptide];
+    if (!c) return true;
+    const on = parseInt(c.on_weeks, 10) || 0;
+    const off = parseInt(c.off_weeks, 10) || 0;
+    if (on <= 0 || (on + off) <= 0) return true;
+    if (!c.anchor_date) return true;
+    const ref = referenceDate || todayStr();
+    const days = Math.floor((new Date(ref + 'T12:00:00') - new Date(c.anchor_date + 'T12:00:00')) / 86400000);
+    if (days < 0) return true; // before anchor: treat as on
+    const period = on + off;
+    const week = Math.floor(days / 7);
+    return (week % period) < on;
+}
+
+function getSchedule(profile, referenceDate) {
     const base = getBaseSchedule(profile);
     const override = profile && profile.schedule_override;
     const hasOverride = override && typeof override === 'object';
@@ -480,10 +498,14 @@ function getSchedule(profile) {
     const stack = (profile && profile.peptide_type)
         ? profile.peptide_type.split(' + ').map(s => s.trim()).filter(Boolean)
         : [];
+    const ref = referenceDate || activeDate();
     const filterShots = (shots) => {
         if (!Array.isArray(shots)) return [];
-        if (stack.length === 0) return shots.slice();
-        return shots.filter(s => stack.includes(s));
+        let result = shots.slice();
+        if (stack.length > 0) result = result.filter(s => stack.includes(s));
+        // Apply per-peptide cycling.
+        result = result.filter(s => isPeptideOnCycle(profile, s, ref));
+        return result;
     };
     const merged = {};
     for (let d = 0; d < 7; d++) {
@@ -498,6 +520,27 @@ function getSchedule(profile) {
         merged[d] = day;
     }
     return merged;
+}
+
+// Returns the list of peptides whose latest applicable titration step
+// doesn't match the user's current_doses value (i.e. they're due to escalate).
+function getDueTitrations(profile) {
+    const sched = (profile && profile.titration_schedules) || {};
+    const doses = (profile && profile.current_doses) || {};
+    const wk = weekNum(profile);
+    const due = [];
+    Object.entries(sched).forEach(([peptide, steps]) => {
+        if (!Array.isArray(steps) || steps.length === 0) return;
+        const applicable = steps
+            .filter(s => s && typeof s.mg === 'number' && parseInt(s.week, 10) <= wk)
+            .sort((a, b) => b.week - a.week)[0];
+        if (!applicable) return;
+        const current = doses[peptide];
+        if (current !== applicable.mg) {
+            due.push({ peptide, from: current, to: applicable.mg, week: applicable.week });
+        }
+    });
+    return due;
 }
 
 // Shot log entries may be either a legacy ISO string OR an object { at, mg, units }.
@@ -585,7 +628,7 @@ async function ensureTodayLog() {
     const { data, error } = await sb.from('daily_logs').select('*')
         .eq('user_id', currentSession.user.id).eq('log_date', date).maybeSingle();
     if (error) throw error;
-    todayLog = data || { user_id: currentSession.user.id, log_date: date, calories: null, protein: null, weight: null, water: null, fiber: null, shots: {}, workout: { completed: false, notes: '' } };
+    todayLog = data || { user_id: currentSession.user.id, log_date: date, calories: null, protein: null, weight: null, water: null, fiber: null, shots: {}, workout: { completed: false, notes: '' }, mood: null, energy: null, nsv: null, notes: null };
     return todayLog;
 }
 
@@ -595,6 +638,7 @@ async function upsertTodayLog() {
         user_id: log.user_id, log_date: log.log_date,
         calories: log.calories, protein: log.protein, weight: log.weight,
         water: log.water, fiber: log.fiber, shots: log.shots, workout: log.workout,
+        mood: log.mood, energy: log.energy, nsv: log.nsv, notes: log.notes,
         updated_at: new Date().toISOString()
     };
     const { data, error } = await sb.from('daily_logs').upsert(payload, { onConflict: 'user_id,log_date' }).select().single();
@@ -1150,6 +1194,28 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
         });
     }
 
+    // === TITRATION BANNER ===
+    const dueTitrations = getDueTitrations(p);
+    if (dueTitrations.length > 0) {
+        dueTitrations.forEach(t => {
+            const fromTxt = (t.from == null) ? 'not set' : `${t.from}mg`;
+            const safe = t.peptide.replace(/'/g, "\\'");
+            html += `<div class="card stagger" style="border-color: rgba(245, 158, 11, 0.4); background: linear-gradient(145deg, rgba(120, 53, 15, 0.25), rgba(31, 41, 55, 0.6));">
+                <div class="flex items-center gap-3">
+                    <div class="text-2xl">&#x1F4C8;</div>
+                    <div class="flex-1">
+                        <div class="font-bold text-amber-400 text-sm">Time to step up ${t.peptide}</div>
+                        <div class="text-gray-300 text-xs">Week ${t.week} protocol: ${fromTxt} &rarr; <span class="text-amber-300 font-bold">${t.to}mg</span></div>
+                    </div>
+                </div>
+                <div class="flex gap-2 mt-3">
+                    <button onclick="applyTitrationStep('${safe}', ${t.to})" class="btn-primary" style="padding:0.6rem 1rem; min-height:auto">Apply now</button>
+                    <button onclick="snoozeTitrationStep('${safe}', ${t.to})" class="btn-shot bg-gray-800 border border-gray-700 text-gray-300" style="box-shadow:none; padding:0.6rem 1rem; min-height:auto; width:auto">Not yet</button>
+                </div>
+            </div>`;
+        });
+    }
+
     // === TODAY'S PROTOCOL ===
     const isMorning = todaySched.window === 'morning';
     const windowLabel = isMorning ? '&#x1F305; Morning Fasted' : '&#x1F319; Evening Bedtime';
@@ -1300,6 +1366,39 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
         <button onclick="showScreen('workout')" class="flex-1 py-2.5 text-sm text-gray-500 hover:text-amber-400 transition font-medium rounded-lg">Full Workout Plan &rarr;</button>
         <button onclick="showScreen('shots')" class="flex-1 py-2.5 text-sm text-gray-500 hover:text-amber-400 transition font-medium rounded-lg">Weekly Shots &rarr;</button>
     </div></div>`;
+
+    // === DAILY CHECK-IN ===
+    const moodEmoji = ['', '\u{1F622}', '\u{1F615}', '\u{1F610}', '\u{1F642}', '\u{1F60A}'];
+    const moodVal = log.mood || 0;
+    const energyVal = log.energy || 0;
+    const nsvVal = (log.nsv || '').replace(/"/g, '&quot;');
+    const notesVal = (log.notes || '').replace(/</g, '&lt;');
+    html += `<div class="card stagger"><div class="section-title">Daily Check-In</div>
+        <div class="mb-3">
+            <label class="label">Mood</label>
+            <div class="grid grid-cols-5 gap-1.5">`;
+    for (let i = 1; i <= 5; i++) {
+        const active = moodVal === i;
+        html += `<button onclick="saveDailyRating('mood',${i})" class="rounded-lg py-2 text-2xl transition ${active ? 'bg-amber-600/40 ring-2 ring-amber-500' : 'bg-gray-800 hover:bg-gray-700'}">${moodEmoji[i]}</button>`;
+    }
+    html += `</div></div>
+        <div class="mb-3">
+            <label class="label">Energy</label>
+            <div class="grid grid-cols-5 gap-1.5">`;
+    for (let i = 1; i <= 5; i++) {
+        const active = energyVal >= i;
+        html += `<button onclick="saveDailyRating('energy',${i})" class="rounded-lg py-2.5 text-sm font-bold transition ${active ? 'bg-emerald-600/50 text-white' : 'bg-gray-800 text-gray-500 hover:bg-gray-700'}">${i}</button>`;
+    }
+    html += `</div></div>
+        <div class="mb-3">
+            <label class="label">Today's Win (NSV)</label>
+            <input type="text" class="input-field" placeholder="Clothes fit looser, slept well, no cravings..." value="${nsvVal}" onchange="saveDailyText('nsv', this.value)">
+        </div>
+        <div>
+            <label class="label">Notes</label>
+            <textarea class="input-field" rows="2" placeholder="How did today go?" onchange="saveDailyText('notes', this.value)">${notesVal}</textarea>
+        </div>
+    </div>`;
 
     // === WEIGHT CHART ===
     const totalLoss = p.start_weight && latestW ? (p.start_weight - latestW).toFixed(1) : null;
@@ -1530,6 +1629,27 @@ async function saveDailyField(field, value) {
         await ensureTodayLog();
         todayLog[field] = value ? parseFloat(value) : null;
         await upsertTodayLog();
+    } catch (e) { alert('Save error: ' + e.message); }
+}
+
+async function saveDailyText(field, value) {
+    try {
+        await ensureTodayLog();
+        const trimmed = (value == null ? '' : String(value)).trim();
+        todayLog[field] = trimmed === '' ? null : trimmed;
+        await upsertTodayLog();
+    } catch (e) { alert('Save error: ' + e.message); }
+}
+
+async function saveDailyRating(field, value) {
+    try {
+        await ensureTodayLog();
+        const n = parseInt(value, 10);
+        // Toggle: tapping the same level clears it.
+        if (todayLog[field] === n) todayLog[field] = null;
+        else todayLog[field] = (n >= 1 && n <= 5) ? n : null;
+        await upsertTodayLog();
+        await loadDashboard();
     } catch (e) { alert('Save error: ' + e.message); }
 }
 
@@ -1909,6 +2029,69 @@ function renderLab(masters, pens, types, inv, profiles) {
     });
     html += '</div>';
 
+    // === TITRATION & CYCLES ===
+    html += `<div class="card"><div class="section-title">Titration &amp; Cycles</div>
+        <p class="text-xs text-gray-500 mb-3">Plan dose escalations and on/off cycling per peptide. Titration prompts on the dashboard when a step is due. Cycle off-weeks drop a peptide from the schedule automatically.</p>`;
+    profiles.forEach(u => {
+        const stack = u.peptide_type ? u.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
+        if (stack.length === 0) return;
+        const titration = u.titration_schedules || {};
+        const cycles = u.peptide_cycles || {};
+        const userWk = weekNum(u);
+        html += `<div class="bg-gray-800 rounded-lg p-3 mb-3">
+            <div class="font-bold text-amber-400 text-sm mb-1">${u.display_name}</div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Current Week: ${userWk}</div>`;
+        stack.forEach(pep => {
+            const safePep = pep.replace(/'/g, "\\'");
+            const steps = Array.isArray(titration[pep]) ? titration[pep] : [];
+            const c = cycles[pep] || {};
+            const onCycleNow = isPeptideOnCycle(u, pep);
+            const cycleConfigured = c.on_weeks && c.off_weeks && c.anchor_date;
+            html += `<div class="bg-gray-900 border border-gray-700/40 rounded-lg p-3 mb-2">
+                <div class="font-bold text-gray-200 text-sm mb-2">${pep} ${cycleConfigured ? (onCycleNow ? '<span class="text-emerald-400 text-[10px] ml-1">CYCLE ON</span>' : '<span class="text-gray-500 text-[10px] ml-1">CYCLE OFF</span>') : ''}</div>
+
+                <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Titration steps</div>
+                <div class="space-y-1.5 mb-2">`;
+            if (steps.length === 0) {
+                html += `<div class="text-xs text-gray-600 italic">No titration steps. Stays at current dose.</div>`;
+            } else {
+                steps.forEach((step, idx) => {
+                    const applied = (step.week <= userWk);
+                    html += `<div class="flex items-center gap-2">
+                        <span class="text-[10px] text-gray-500 w-10 shrink-0">Wk</span>
+                        <input type="number" class="input-field text-xs py-1.5" style="max-width:60px" value="${step.week || ''}" onchange="updateTitrationStep('${u.id}','${safePep}',${idx},'week',this.value)">
+                        <span class="text-[10px] text-gray-500 w-5 shrink-0">@</span>
+                        <input type="number" step="0.05" class="input-field text-xs py-1.5" style="max-width:80px" value="${step.mg || ''}" onchange="updateTitrationStep('${u.id}','${safePep}',${idx},'mg',this.value)">
+                        <span class="text-[10px] text-gray-500">mg</span>
+                        ${applied ? '<span class="text-[10px] text-emerald-400 ml-auto">due/done</span>' : '<span class="text-[10px] text-gray-600 ml-auto">future</span>'}
+                        <button onclick="removeTitrationStep('${u.id}','${safePep}',${idx})" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
+                    </div>`;
+                });
+            }
+            html += `</div>
+                <button onclick="addTitrationStep('${u.id}','${safePep}')" class="text-xs text-amber-400 hover:text-amber-300 bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded transition mb-3">+ Add step</button>
+
+                <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-1 mt-2">Cycle</div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="text-[10px] text-gray-500">On weeks</label>
+                        <input type="number" min="0" class="input-field text-xs py-1.5" value="${c.on_weeks || ''}" placeholder="e.g. 5" onchange="updateCycleField('${u.id}','${safePep}','on_weeks',this.value)">
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-gray-500">Off weeks</label>
+                        <input type="number" min="0" class="input-field text-xs py-1.5" value="${c.off_weeks || ''}" placeholder="e.g. 4" onchange="updateCycleField('${u.id}','${safePep}','off_weeks',this.value)">
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-gray-500">Anchor</label>
+                        <input type="date" class="input-field text-xs py-1.5" value="${c.anchor_date || ''}" onchange="updateCycleField('${u.id}','${safePep}','anchor_date',this.value)">
+                    </div>
+                </div>
+            </div>`;
+        });
+        html += `</div>`;
+    });
+    html += `</div>`;
+
     // === INVENTORY ===
     html += `<div class="card"><div class="section-title">Unmixed Vial Inventory</div><div class="space-y-3">`;
     inv.forEach(item => {
@@ -2116,6 +2299,112 @@ async function removeUserPeptide(userId, peptide) {
         await updateProfileField(userId, { peptide_type: updated.join(' + '), current_doses: doses });
         await loadLab(true);
     } catch(e){ alert(e.message); }
+}
+
+// --- Titration handlers ---
+
+async function applyTitrationStep(peptide, targetMg) {
+    try {
+        const uid = currentSession.user.id;
+        const doses = { ...(currentProfile.current_doses || {}) };
+        doses[peptide] = parseFloat(targetMg);
+        await updateProfileField(uid, { current_doses: doses });
+        await loadDashboard();
+    } catch (e) { alert(e.message); }
+}
+
+// "Snooze" = bump the step's week so it stops nagging this week.
+// Adds +1 week to whichever step is currently due.
+async function snoozeTitrationStep(peptide, targetMg) {
+    try {
+        const uid = currentSession.user.id;
+        const sched = { ...(currentProfile.titration_schedules || {}) };
+        const steps = (sched[peptide] || []).map(s => ({ ...s }));
+        const wk = weekNum(currentProfile);
+        // Find the matching step (highest applicable for current week with that mg).
+        const applicable = steps
+            .filter(s => s.mg === parseFloat(targetMg) && parseInt(s.week, 10) <= wk)
+            .sort((a, b) => b.week - a.week)[0];
+        if (applicable) {
+            applicable.week = wk + 1;
+            sched[peptide] = steps;
+            await updateProfileField(uid, { titration_schedules: sched });
+        }
+        await loadDashboard();
+    } catch (e) { alert(e.message); }
+}
+
+async function updateTitrationStep(userId, peptide, idx, field, value) {
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if (!user) return;
+        const sched = { ...(user.titration_schedules || {}) };
+        const steps = [...(sched[peptide] || [])];
+        const step = { ...(steps[idx] || {}) };
+        if (field === 'week') step.week = parseInt(value, 10) || 1;
+        if (field === 'mg') step.mg = parseFloat(value) || 0;
+        steps[idx] = step;
+        sched[peptide] = steps.sort((a, b) => (a.week || 0) - (b.week || 0));
+        await updateProfileField(userId, { titration_schedules: sched });
+        await loadLab(true);
+    } catch (e) { alert(e.message); }
+}
+
+async function addTitrationStep(userId, peptide) {
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if (!user) return;
+        const sched = { ...(user.titration_schedules || {}) };
+        const steps = [...(sched[peptide] || [])];
+        const lastWeek = steps.length > 0 ? Math.max(...steps.map(s => s.week || 1)) : weekNum(user);
+        const lastMg = steps.length > 0 ? steps[steps.length - 1].mg : (user.current_doses?.[peptide] || 0);
+        steps.push({ week: lastWeek + 4, mg: lastMg });
+        sched[peptide] = steps;
+        await updateProfileField(userId, { titration_schedules: sched });
+        await loadLab(true);
+    } catch (e) { alert(e.message); }
+}
+
+async function removeTitrationStep(userId, peptide, idx) {
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if (!user) return;
+        const sched = { ...(user.titration_schedules || {}) };
+        const steps = [...(sched[peptide] || [])];
+        steps.splice(idx, 1);
+        if (steps.length === 0) delete sched[peptide];
+        else sched[peptide] = steps;
+        await updateProfileField(userId, { titration_schedules: sched });
+        await loadLab(true);
+    } catch (e) { alert(e.message); }
+}
+
+// --- Peptide cycle handlers ---
+
+async function updateCycleField(userId, peptide, field, value) {
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if (!user) return;
+        const cycles = { ...(user.peptide_cycles || {}) };
+        const c = { ...(cycles[peptide] || {}) };
+        if (field === 'on_weeks' || field === 'off_weeks') {
+            const n = parseInt(value, 10);
+            c[field] = (isNaN(n) || n <= 0) ? null : n;
+        } else if (field === 'anchor_date') {
+            c[field] = value || null;
+        }
+        // Drop the entry entirely if it's effectively empty (always-on).
+        const hasMeaningfulCycle = c.on_weeks && c.off_weeks && c.anchor_date;
+        if (hasMeaningfulCycle) cycles[peptide] = c;
+        else delete cycles[peptide];
+        await updateProfileField(userId, { peptide_cycles: cycles });
+        await loadLab(true);
+        if (userId === currentSession.user.id) await loadDashboard();
+    } catch (e) { alert(e.message); }
 }
 
 // --- Protocol Editor handlers ---

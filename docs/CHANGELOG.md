@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Phase 2: Titration, Cycles, Daily Check-In
+
+- Dose titration schedules per peptide, per user. Admin defines `{week, mg}` steps in the Lab; dashboard surfaces a "Time to step up" banner when a step is due. Apply / Not yet buttons.
+- Peptide cycle scheduling (on/off weeks per peptide). `getSchedule()` drops the peptide automatically on days inside an off-week. Lab shows a CYCLE ON / CYCLE OFF badge per peptide.
+- Daily Check-In card on the dashboard: mood (1–5 emoji), energy (1–5 dots), today's NSV text, and free-form notes. All optional.
+- Backed by Migration 008.
+
+### Phase 1: PWA polish + Backup/Restore
+
+- Web app manifest, theme-color, SVG icon, and apple-touch-icon link. Installs to home screen as "PepCC" with the amber flask icon instead of a generic shortcut.
+- Service worker with network-first HTML and cache-first static assets. App opens offline. CDN scripts and Supabase requests pass through.
+- New "Download Backup" exports a versioned JSON envelope containing profile, daily_logs, measurements, and a pen snapshot.
+- New "Restore" button accepts the same envelope, previews counts, and upserts logs + measurements by natural key. Profile restore is opt-in.
+
 ### Protocol Editor
 
 - Admin Lab now has a Protocol Editor card. For each user, every day of the week shows a window dropdown (morning/evening) and a row of chips for the user's stack peptides. Tapping a chip toggles the shot on or off for that day. Days that have not been touched fall back to the hardcoded base schedule.
