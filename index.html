@@ -404,7 +404,8 @@ let currentProfile = null;
 let todayLog = null;       // cached log for the date being viewed
 let viewingDate = null;    // date string being viewed (null = today)
 let cachedMasters = [];    // active master vials
-let cachedPens = [];       // active pens
+let cachedPens = [];       // active pens (admin scope)
+let cachedMyPens = [];     // active pens visible to current user (own + shared)
 let cachedPeptideTypes = [];
 let cachedInventory = [];
 let weightChart = null;
@@ -454,12 +455,39 @@ function weekNum(profile) {
     return Math.max(1, Math.floor(daysSince(profile.program_start) / 7) + 1);
 }
 
-function getSchedule(profile) {
+function getBaseSchedule(profile) {
     const n = (profile?.display_name || '').toLowerCase();
     if (n === 'grumpy' || n === 'miguel') return GRUMPY_SCHEDULE;
     if (n === 'karen') return KAREN_SCHEDULE;
     if (n === 'daisy') return DAISY_SCHEDULE;
     return GENERIC_SCHEDULE;
+}
+
+function getSchedule(profile) {
+    const base = getBaseSchedule(profile);
+    const override = profile?.schedule_override;
+    if (!override || typeof override !== 'object') return base;
+    const merged = {};
+    for (let d = 0; d < 7; d++) {
+        const baseDay = base[d] || { window: 'morning', shots: [], workout: '', type: 'rest', fasting: '' };
+        const ov = override[d] || override[String(d)];
+        if (!ov) { merged[d] = baseDay; continue; }
+        merged[d] = {
+            ...baseDay,
+            ...(ov.window ? { window: ov.window } : {}),
+            ...(Array.isArray(ov.shots) ? { shots: ov.shots } : {})
+        };
+    }
+    return merged;
+}
+
+// Shot log entries may be either a legacy ISO string OR an object { at, mg, units }.
+// This helper returns a normalized view; returns null if not logged.
+function getShotMeta(entry) {
+    if (!entry) return null;
+    if (typeof entry === 'string') return { at: entry, mg: null, units: null };
+    if (typeof entry === 'object') return { at: entry.at || null, mg: entry.mg ?? null, units: entry.units ?? null };
+    return null;
 }
 
 function profileIs(profile, name) {
@@ -650,7 +678,8 @@ async function fetchMyActivePens() {
         .or(`assigned_to.eq.${currentSession.user.id},shared.eq.true`)
         .order('filled_date', { ascending: false });
     if (error) throw error;
-    return data || [];
+    cachedMyPens = data || [];
+    return cachedMyPens;
 }
 
 async function insertPen(masterVialId, peptide, mlFromMaster, mlFreshWater, totalMl, mgContent, concentration, filledDate, assignedTo) {
@@ -847,7 +876,7 @@ function showScreen(name) {
     if (name === 'lab') loadLab();
     if (name === 'messages') loadMessages();
     if (name === 'workout') renderWorkoutPlan();
-    if (name === 'shots') renderShotsSchedule();
+    if (name === 'shots') { showLoading('shots-content'); renderShotsSchedule(); }
     if (name === 'measurements') loadMeasurements();
     if (name === 'settings') loadSettings();
 }
@@ -1126,18 +1155,27 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
     if (todayShots.length > 0) {
         todayShots.forEach(peptide => {
             const shotLog = log.shots || {};
-            const logged = !!shotLog[peptide];
+            const meta = getShotMeta(shotLog[peptide]);
+            const logged = !!meta;
 
             // Shot button + dosing in one row
             const pen = pens.find(pe => pe.peptide === peptide);
             const dose = p.current_doses ? p.current_doses[peptide] : null;
-            const units = (pen && dose) ? calcUnitsFromConc(dose, pen.concentration) : null;
+            const plannedUnits = (pen && dose) ? calcUnitsFromConc(dose, pen.concentration) : null;
+            const loggedMg = meta && meta.mg != null ? meta.mg : null;
+            const loggedUnits = meta && meta.units != null ? meta.units : null;
+            const pillText = logged
+                ? (loggedMg != null && loggedUnits != null ? loggedMg + 'mg • ' + loggedUnits + 'u'
+                    : loggedUnits != null ? loggedUnits + 'u'
+                    : loggedMg != null ? loggedMg + 'mg'
+                    : '&#x2705;')
+                : (plannedUnits ? plannedUnits + 'u' : null);
 
             html += `<div class="mb-2">
                 <button onclick="logShot('${peptide}')" class="btn-shot ${logged ? 'btn-shot-done check-pop shot-ripple' : 'btn-shot-pending'}">
                     <span class="text-xl">${logged ? '&#x2705;' : '&#x1F489;'}</span>
                     <span class="flex-1 text-left">${logged ? peptide + ' Logged' : 'Log ' + peptide}</span>
-                    ${units ? '<span class="dose-pill text-amber-400 font-extrabold text-sm">'+units+'u</span>' : ''}
+                    ${pillText ? '<span class="dose-pill text-amber-400 font-extrabold text-sm">'+pillText+'</span>' : ''}
                 </button>`;
 
             if (pen && dose) {
@@ -1477,13 +1515,92 @@ async function logShot(peptide) {
         await ensureTodayLog();
         if (!todayLog.shots) todayLog.shots = {};
         if (todayLog.shots[peptide]) {
-            if (!confirm('Shot already logged. Undo?')) return;
-            delete todayLog.shots[peptide];
-        } else {
-            // Always record the real administration timestamp
-            todayLog.shots[peptide] = new Date().toISOString();
+            // Already logged — confirm undo and show what was recorded.
+            const meta = getShotMeta(todayLog.shots[peptide]);
+            openShotEditModal(peptide, meta, true);
+            return;
         }
+        // Pre-fill from current_doses and pen concentration if available.
+        const p = currentProfile || {};
+        const mg = (p.current_doses && p.current_doses[peptide]) ? p.current_doses[peptide] : '';
+        const pen = (cachedMyPens || []).find(pe => pe.peptide === peptide);
+        const conc = pen ? pen.concentration : null;
+        openShotEditModal(peptide, { at: new Date().toISOString(), mg, units: (mg && conc) ? calcUnitsFromConc(mg, conc) : '' }, false);
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// Open a modal to confirm/edit the dose for a shot.
+// If `isUndo` is true, the modal shows the current recorded values with an "Undo" button.
+function openShotEditModal(peptide, meta, isUndo) {
+    const pen = (cachedMyPens || []).find(pe => pe.peptide === peptide);
+    const conc = pen ? pen.concentration : null;
+    const safeMg = meta?.mg != null && meta.mg !== '' ? meta.mg : '';
+    const safeUnits = meta?.units != null && meta.units !== '' ? meta.units : (safeMg && conc ? calcUnitsFromConc(safeMg, conc) : '');
+    const recordedAt = meta?.at ? new Date(meta.at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+
+    const html = `
+        <div class="text-center mb-4">
+            <div class="text-3xl mb-2">&#x1F489;</div>
+            <h3 class="text-lg font-bold text-amber-400">${isUndo ? 'Shot Logged' : 'Log Shot'}</h3>
+            <p class="text-sm text-gray-400">${peptide}</p>
+            ${recordedAt && isUndo ? `<p class="text-xs text-gray-500 mt-1">${recordedAt}</p>` : ''}
+        </div>
+        <div class="space-y-3">
+            <div>
+                <label class="label">Dose (mg)</label>
+                <input type="number" inputmode="decimal" step="0.05" class="input-field" id="shot-mg" value="${safeMg}" placeholder="e.g. 1.0" oninput="updateShotUnitsPreview(${conc || 'null'})">
+            </div>
+            <div>
+                <label class="label">Units</label>
+                <input type="number" inputmode="decimal" step="0.1" class="input-field" id="shot-units" value="${safeUnits}" placeholder="auto from mg">
+                <p class="text-xs text-gray-500 mt-1">${conc ? 'Pen: ' + conc + ' mg/mL' : 'No pen assigned — units must be entered manually.'}</p>
+            </div>
+        </div>
+        <div class="flex gap-2 mt-5">
+            ${isUndo
+                ? `<button onclick="undoShot('${peptide.replace(/'/g, "\\'")}')" class="btn-shot bg-red-900/60 border border-red-700 text-red-100" style="box-shadow:none">Undo Shot</button>
+                   <button onclick="saveShot('${peptide.replace(/'/g, "\\'")}')" class="btn-primary">Update</button>`
+                : `<button onclick="closeModal()" class="btn-shot bg-gray-800 border border-gray-700 text-gray-300" style="box-shadow:none">Cancel</button>
+                   <button onclick="saveShot('${peptide.replace(/'/g, "\\'")}')" class="btn-primary">&#x2705; Confirm</button>`}
+        </div>
+    `;
+    showModal(html);
+    setTimeout(() => { const i = document.getElementById('shot-mg'); if (i) i.focus(); }, 50);
+}
+
+function updateShotUnitsPreview(conc) {
+    const mg = parseFloat(document.getElementById('shot-mg')?.value);
+    const unitsEl = document.getElementById('shot-units');
+    if (!unitsEl) return;
+    if (mg && conc) unitsEl.value = calcUnitsFromConc(mg, conc);
+}
+
+async function saveShot(peptide) {
+    try {
+        const mgRaw = document.getElementById('shot-mg')?.value;
+        const unitsRaw = document.getElementById('shot-units')?.value;
+        const mg = mgRaw ? parseFloat(mgRaw) : null;
+        const units = unitsRaw ? parseFloat(unitsRaw) : null;
+        await ensureTodayLog();
+        if (!todayLog.shots) todayLog.shots = {};
+        const existing = getShotMeta(todayLog.shots[peptide]);
+        todayLog.shots[peptide] = {
+            at: existing?.at || new Date().toISOString(),
+            mg: mg,
+            units: units
+        };
         await upsertTodayLog();
+        closeModal();
+        await loadDashboard();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function undoShot(peptide) {
+    try {
+        await ensureTodayLog();
+        if (todayLog.shots && todayLog.shots[peptide]) delete todayLog.shots[peptide];
+        await upsertTodayLog();
+        closeModal();
         await loadDashboard();
     } catch (e) { alert('Error: ' + e.message); }
 }
@@ -1694,6 +1811,48 @@ function renderLab(masters, pens, types, inv, profiles) {
                     <option value="unassign">Unassign</option>
                 </select>
             </div></div>`; }); }
+    html += '</div>';
+
+    // === PROTOCOL EDITOR ===
+    html += `<div class="card"><div class="section-title">Protocol Editor</div>
+        <p class="text-xs text-gray-500 mb-3">Customize each user's weekly schedule. Pick the injection window per day and toggle which peptides are scheduled. Unchanged days fall back to the built-in defaults.</p>`;
+    profiles.forEach(u => {
+        const effective = getSchedule(u);
+        const override = u.schedule_override || {};
+        const stack = u.peptide_type ? u.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
+        const hasOverride = override && Object.keys(override).length > 0;
+        html += `<div class="bg-gray-800 rounded-lg p-3 mb-3">
+            <div class="flex items-center justify-between mb-2">
+                <div class="font-bold text-amber-400 text-sm">${u.display_name}</div>
+                ${hasOverride ? `<button onclick="resetUserSchedule('${u.id}')" class="text-xs text-gray-400 hover:text-red-400 bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded transition">Reset to default</button>` : '<span class="text-[10px] text-gray-600 uppercase tracking-wide">Using defaults</span>'}
+            </div>
+            <div class="space-y-2">`;
+        for (let d = 0; d < 7; d++) {
+            const day = effective[d] || { window: 'morning', shots: [] };
+            const overridden = !!(override[d] || override[String(d)]);
+            const shots = day.shots || [];
+            html += `<div class="rounded-lg p-2 ${overridden ? 'bg-amber-950/30 border border-amber-800/40' : 'bg-gray-900 border border-gray-700/40'}">
+                <div class="flex items-center gap-2 mb-1.5">
+                    <span class="text-xs font-bold text-gray-300 w-10">${DAYS_SHORT[d]}</span>
+                    <select class="input-field text-xs py-1.5 flex-1" onchange="updateUserScheduleWindow('${u.id}',${d},this.value)">
+                        <option value="morning" ${day.window==='morning'?'selected':''}>&#x1F305; Morning</option>
+                        <option value="evening" ${day.window==='evening'?'selected':''}>&#x1F319; Evening</option>
+                    </select>
+                </div>
+                <div class="flex flex-wrap gap-1.5">`;
+            if (stack.length === 0) {
+                html += `<span class="text-xs text-gray-600">No peptides in stack &mdash; add one below.</span>`;
+            } else {
+                stack.forEach(pep => {
+                    const active = shots.includes(pep);
+                    const safe = pep.replace(/'/g, "\\'");
+                    html += `<button onclick="toggleUserScheduleShot('${u.id}',${d},'${safe}')" class="text-xs px-2 py-1 rounded-full transition ${active ? 'bg-amber-600 hover:bg-amber-500 text-white font-bold' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}">${pep}</button>`;
+                });
+            }
+            html += `</div></div>`;
+        }
+        html += `</div></div>`;
+    });
     html += '</div>';
 
     // === USER DOSE MANAGEMENT ===
@@ -1936,6 +2095,68 @@ async function removeUserPeptide(userId, peptide) {
     } catch(e){ alert(e.message); }
 }
 
+// --- Protocol Editor handlers ---
+
+async function getUserScheduleOverride(userId) {
+    const profiles = await fetchAllProfiles();
+    const user = profiles.find(p => p.id === userId);
+    if (!user) return null;
+    const base = getBaseSchedule(user);
+    const override = (user.schedule_override && typeof user.schedule_override === 'object') ? { ...user.schedule_override } : {};
+    // Normalize keys to numeric.
+    const norm = {};
+    for (let d = 0; d < 7; d++) {
+        const ov = override[d] ?? override[String(d)];
+        if (ov) norm[d] = { ...ov };
+    }
+    return { user, base, override: norm };
+}
+
+function _materializeDay(base, override, d) {
+    const baseDay = base[d] || { window: 'morning', shots: [] };
+    const ov = override[d] || {};
+    return {
+        window: ov.window || baseDay.window,
+        shots: Array.isArray(ov.shots) ? ov.shots.slice() : (baseDay.shots || []).slice()
+    };
+}
+
+async function updateUserScheduleWindow(userId, dayIdx, newWindow) {
+    try {
+        const ctx = await getUserScheduleOverride(userId);
+        if (!ctx) return;
+        const cur = _materializeDay(ctx.base, ctx.override, dayIdx);
+        cur.window = newWindow;
+        ctx.override[dayIdx] = cur;
+        await updateProfileField(userId, { schedule_override: ctx.override });
+        await loadLab(true);
+        if (userId === currentSession.user.id) await loadDashboard();
+    } catch (e) { alert(e.message); }
+}
+
+async function toggleUserScheduleShot(userId, dayIdx, peptide) {
+    try {
+        const ctx = await getUserScheduleOverride(userId);
+        if (!ctx) return;
+        const cur = _materializeDay(ctx.base, ctx.override, dayIdx);
+        const i = cur.shots.indexOf(peptide);
+        if (i >= 0) cur.shots.splice(i, 1); else cur.shots.push(peptide);
+        ctx.override[dayIdx] = cur;
+        await updateProfileField(userId, { schedule_override: ctx.override });
+        await loadLab(true);
+        if (userId === currentSession.user.id) await loadDashboard();
+    } catch (e) { alert(e.message); }
+}
+
+async function resetUserSchedule(userId) {
+    if (!confirm('Clear all protocol overrides for this user and restore the built-in defaults?')) return;
+    try {
+        await updateProfileField(userId, { schedule_override: null });
+        await loadLab(true);
+        if (userId === currentSession.user.id) await loadDashboard();
+    } catch (e) { alert(e.message); }
+}
+
 // ╔══════════════════════════════════════════════════════════════╗
 // ║              12b. HOUSEHOLD MESSAGES                        ║
 // ╚══════════════════════════════════════════════════════════════╝
@@ -2134,39 +2355,64 @@ function renderWorkoutPlan() {
 // ║              13b. WEEKLY SHOT SCHEDULE                      ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-function renderShotsSchedule() {
+async function renderShotsSchedule() {
     if (!currentProfile) return;
     const p = currentProfile;
     const sched = getSchedule(p);
     const doses = p.current_doses || {};
 
+    // Pull this week's logs (Sun..Sat containing today) so we can show actual amounts.
+    const today = todayStr();
+    const todayDow = new Date(today + 'T12:00:00').getDay();
+    const sunday = shiftDate(today, -todayDow);
+    const saturday = shiftDate(sunday, 6);
+    let weekLogs = [];
+    try {
+        const { data } = await sb.from('daily_logs').select('log_date, shots')
+            .eq('user_id', currentSession.user.id).gte('log_date', sunday).lte('log_date', saturday);
+        weekLogs = data || [];
+    } catch (e) { /* non-fatal */ }
+    const logByDow = {};
+    weekLogs.forEach(l => {
+        const dow = new Date(l.log_date + 'T12:00:00').getDay();
+        logByDow[dow] = l;
+    });
+
     let html = `<div class="card"><div class="section-title">Your Peptide Stack</div>
         <div class="text-sm text-gray-300 mb-2">${p.peptide_type || 'Not configured'}</div>
         <div class="grid grid-cols-2 gap-2">`;
     Object.entries(doses).forEach(([name, mg]) => {
-        html += `<div class="bg-gray-800 rounded-lg p-2.5 text-center">
+        const safe = name.replace(/'/g, "\\'");
+        html += `<button onclick="showPeptideHistory('${safe}')" class="bg-gray-800 hover:bg-gray-700 rounded-lg p-2.5 text-center transition active:scale-95">
             <div class="text-amber-400 font-bold text-sm">${name}</div>
             <div class="text-white text-lg font-extrabold">${mg}mg</div>
-        </div>`;
+            <div class="text-[10px] text-gray-500 uppercase tracking-wide mt-0.5">View history</div>
+        </button>`;
     });
     html += `</div></div>`;
 
-    html += `<div class="card"><div class="section-title">Weekly Shot Schedule</div><div class="space-y-3">`;
+    html += `<div class="card"><div class="section-title">This Week's Shots</div>
+        <p class="text-xs text-gray-500 mb-3">Week of ${formatDate(sunday)} &mdash; ${formatDate(saturday)} &bull; tap a peptide to see history.</p>
+        <div class="space-y-3">`;
 
     for (let d = 0; d < 7; d++) {
         const day = sched[d];
         if (!day) continue;
-        const isToday = d === dayOfWeek();
+        const dayDate = shiftDate(sunday, d);
+        const isToday = d === todayDow;
+        const isPast = dayDate < today;
         const isMorning = day.window === 'morning';
         const icon = isMorning ? '&#x1F305;' : '&#x1F319;';
         const windowLabel = isMorning ? 'Morning (Fasted)' : 'Evening (Bedtime)';
         const shots = day.shots || [];
         const hasShots = shots.length > 0;
+        const dayLog = logByDow[d];
 
         html += `<div class="rounded-xl p-3 ${isToday ? 'bg-amber-900/20 border border-amber-700' : 'bg-gray-800/60 border border-gray-700/50'}">
             <div class="flex items-center justify-between mb-1.5">
                 <div class="flex items-center gap-2">
                     <span class="font-bold text-sm ${isToday ? 'text-amber-400' : 'text-gray-300'}">${DAYS[d]}</span>
+                    <span class="text-[10px] text-gray-500">${formatDateShort(dayDate)}</span>
                     ${isToday ? '<span class="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">TODAY</span>' : ''}
                 </div>
                 <div class="flex items-center gap-1.5 text-xs">
@@ -2176,12 +2422,21 @@ function renderShotsSchedule() {
             </div>`;
 
         if (hasShots) {
-            shots.forEach(peptide => {
-                const mg = doses[peptide];
-                html += `<div class="flex items-center gap-2 py-1.5 ${shots.length > 1 ? 'border-t border-gray-700/40' : ''}">
-                    <span class="text-sm">&#x1F489;</span>
+            shots.forEach((peptide, idx) => {
+                const planned = doses[peptide];
+                const meta = getShotMeta(dayLog?.shots?.[peptide]);
+                const logged = !!meta;
+                const amountText = logged
+                    ? (meta.mg != null && meta.units != null ? meta.mg + 'mg • ' + meta.units + 'u'
+                        : meta.mg != null ? meta.mg + 'mg'
+                        : meta.units != null ? meta.units + 'u'
+                        : 'logged')
+                    : (planned ? planned + 'mg planned' : '');
+                const safe = peptide.replace(/'/g, "\\'");
+                html += `<div class="flex items-center gap-2 py-1.5 ${idx > 0 ? 'border-t border-gray-700/40' : ''}" onclick="showPeptideHistory('${safe}')" style="cursor:pointer">
+                    <span class="text-sm">${logged ? '&#x2705;' : (isPast ? '&#x274C;' : '&#x1F489;')}</span>
                     <span class="text-gray-100 font-medium text-sm flex-1">${peptide}</span>
-                    ${mg ? '<span class="text-amber-400 font-bold text-xs">' + mg + 'mg</span>' : ''}
+                    <span class="${logged ? 'text-emerald-400' : 'text-amber-400'} font-bold text-xs">${amountText}</span>
                 </div>`;
             });
             html += `<div class="text-xs text-gray-500 mt-1">${day.fasting}</div>`;
@@ -2205,14 +2460,79 @@ function renderShotsSchedule() {
         <div class="text-sm text-gray-300 mb-3">${totalShots} total injections per week</div>
         <div class="space-y-2">`;
     Object.entries(peptideDays).forEach(([pep, days]) => {
-        html += `<div class="flex items-center justify-between py-1.5 border-t border-gray-800">
+        const safe = pep.replace(/'/g, "\\'");
+        html += `<button onclick="showPeptideHistory('${safe}')" class="w-full flex items-center justify-between py-2 border-t border-gray-800 hover:bg-gray-800/40 transition text-left">
             <span class="text-gray-200 font-medium text-sm">${pep}</span>
-            <span class="text-gray-400 text-xs">${days.join(', ')} (${days.length}x/wk)</span>
-        </div>`;
+            <span class="text-gray-400 text-xs">${days.join(', ')} (${days.length}x/wk) &rarr;</span>
+        </button>`;
     });
     html += `</div></div>`;
 
     document.getElementById('shots-content').innerHTML = html;
+}
+
+async function showPeptideHistory(peptide) {
+    if (!currentProfile) return;
+    showModal('<div class="flex items-center justify-center py-12"><div class="spinner"></div></div>');
+    try {
+        const { data, error } = await sb.from('daily_logs')
+            .select('log_date, shots')
+            .eq('user_id', currentSession.user.id)
+            .order('log_date', { ascending: false })
+            .limit(365);
+        if (error) throw error;
+        const entries = [];
+        let totalMg = 0, totalShots = 0;
+        (data || []).forEach(l => {
+            const v = l.shots ? l.shots[peptide] : null;
+            const meta = getShotMeta(v);
+            if (!meta) return;
+            entries.push({ date: l.log_date, ...meta });
+            totalShots++;
+            if (meta.mg != null) totalMg += parseFloat(meta.mg) || 0;
+        });
+
+        let html = `<div class="text-center mb-4">
+            <div class="text-3xl mb-2">&#x1F489;</div>
+            <h3 class="text-lg font-bold text-amber-400">${peptide}</h3>
+            <p class="text-xs text-gray-500">Injection history</p>
+        </div>`;
+
+        if (entries.length === 0) {
+            html += `<div class="text-center py-8 text-gray-500 text-sm">No shots logged yet.</div>`;
+        } else {
+            html += `<div class="grid grid-cols-2 gap-2 mb-4">
+                <div class="bg-gray-800 rounded-lg p-2.5 text-center">
+                    <div class="text-white text-lg font-extrabold">${totalShots}</div>
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wide">Total shots</div>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-2.5 text-center">
+                    <div class="text-white text-lg font-extrabold">${totalMg.toFixed(2)}<span class="text-xs text-gray-400">mg</span></div>
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wide">Cumulative mg</div>
+                </div>
+            </div>`;
+            html += `<div class="space-y-1.5 max-h-[50vh] overflow-y-auto">`;
+            entries.forEach(e => {
+                const time = e.at ? new Date(e.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+                const amount = e.mg != null && e.units != null ? `${e.mg}mg • ${e.units}u`
+                    : e.mg != null ? `${e.mg}mg`
+                    : e.units != null ? `${e.units}u`
+                    : 'logged';
+                html += `<div class="flex items-center justify-between py-2 px-3 bg-gray-800/60 rounded-lg">
+                    <div>
+                        <div class="text-gray-100 text-sm font-medium">${formatDate(e.date)}</div>
+                        ${time ? `<div class="text-[10px] text-gray-500">${time}</div>` : ''}
+                    </div>
+                    <div class="text-amber-400 font-bold text-sm">${amount}</div>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+        html += `<button onclick="closeModal()" class="btn-secondary mt-5">Close</button>`;
+        showModal(html);
+    } catch (e) {
+        showModal(`<div class="text-red-400 text-center py-6">${e.message}</div><button onclick="closeModal()" class="btn-secondary mt-4">Close</button>`);
+    }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗

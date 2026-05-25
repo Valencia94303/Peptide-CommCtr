@@ -93,6 +93,29 @@ Injection pens must never be shared between users. Each pen needs to be assigned
 
 ---
 
+## Migration 007 -- Protocol Overrides
+
+**File:** `docs/migration-007-protocol-overrides.sql`
+**Date:** 2026-05-24
+
+### Rationale
+
+Weekly schedules used to live as hardcoded JS constants (`GRUMPY_SCHEDULE`, `KAREN_SCHEDULE`, etc.). Any tweak required a code change and redeploy. The admin needs to retune the protocol from the UI -- switch a day's window between morning fasted and evening bedtime, add or drop a peptide for a specific day -- without touching the source.
+
+### What it changes
+
+- Adds a nullable `schedule_override jsonb` column to `profiles`.
+- Null means "use the built-in base schedule" (no behavior change).
+- When set, the column is a partial map keyed by day-of-week (`0`..`6`, Sunday=0). Each value may contain `window` (`"morning"` or `"evening"`) and/or `shots` (an array of peptide names). Missing days fall back to the base schedule for that user.
+
+### Impact on application code
+
+- `getSchedule(profile)` now layers `profile.schedule_override` on top of the hardcoded base schedule from `getBaseSchedule(profile)`.
+- The Admin Lab gains a "Protocol Editor" card that exposes a 7-day grid per user with a window dropdown and per-peptide toggle chips.
+- `daily_logs.shots` entries are now objects (`{ at, mg, units }`) instead of bare ISO strings. The reader helper `getShotMeta()` accepts both formats, so legacy rows continue to render correctly.
+
+---
+
 ## Writing New Migrations
 
 ### Naming convention

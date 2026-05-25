@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Protocol Editor
+
+- Admin Lab now has a Protocol Editor card. For each user, every day of the week shows a window dropdown (morning/evening) and a row of chips for the user's stack peptides. Tapping a chip toggles the shot on or off for that day. Days that have not been touched fall back to the hardcoded base schedule.
+- Reset-to-default button per user clears all overrides at once.
+- Backed by a new nullable `profiles.schedule_override jsonb` column (Migration 007).
+
+### Shot Amount Logging
+
+- "Log Shot" now opens a confirm modal pre-filled with the user's current dose (mg) and the auto-calculated units from their pen. Adjust either field before saving.
+- Each shot is stored as `{ at, mg, units }` so historical doses are preserved. Existing rows that stored a bare timestamp string still render correctly.
+- Dashboard shot button shows the actually-logged amount once a shot is recorded.
+
+### Weekly Shots Screen
+
+- Shows the actual logged amount per peptide for the current calendar week (Sun-Sat).
+- Past days that were missed are marked with a red X.
+- Tap any peptide (in the stack card, the weekly grid, or the summary) to open a per-peptide history modal listing every logged shot with date, time, mg, and units, plus cumulative-mg and total-shots stats.
+
 ## v1.0.0 -- 2026-03-27
 
 Initial public release of Peptide Command Center.

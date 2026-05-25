@@ -132,6 +132,7 @@ primary key is the same UUID as `auth.users.id`, establishing a 1:1 relationship
 | warning_threshold | numeric | -- | 2 | Max lbs/week loss before Over-Loss Warning fires |
 | program_start | date | -- | current_date | Date the user began the peptide program |
 | current_doses | jsonb | -- | '{}' | Active dose map keyed by peptide name |
+| schedule_override | jsonb | -- | NULL | Per-day overrides for the base schedule (Migration 007). Null = use defaults. |
 | created_at | timestamptz | -- | now() | Row creation timestamp |
 
 ### daily_logs
@@ -287,16 +288,39 @@ A JSON object keyed by peptide name. Values represent the active dose in milligr
 
 ### daily_logs.shots
 
-A JSON object keyed by peptide name. Each value records whether the injection
-was taken and optionally the unit count.
+A JSON object keyed by peptide name. Only peptides that were actually
+administered have a key -- a missing key means "not taken." Each value is
+an object with the administration timestamp and the recorded amount.
 
 ```json
 {
-  "Retatrutide": { "done": true, "units": 15 },
-  "MOTS-c": { "done": true, "units": 30 },
-  "Diamond Glow": { "done": false, "units": 0 }
+  "Retatrutide": { "at": "2026-05-24T07:14:21.000Z", "mg": 1.0, "units": 15.0 },
+  "MOTS-c":      { "at": "2026-05-24T07:15:02.000Z", "mg": 0.5, "units": 30.0 }
 }
 ```
+
+Legacy rows may store a bare ISO timestamp string instead of an object. The
+`getShotMeta()` helper in `index.html` accepts both formats so historical logs
+continue to render. New writes always use the object shape.
+
+### profiles.schedule_override
+
+Nullable JSONB column added in Migration 007. When null, the app uses the
+hardcoded base schedule for the user (`GRUMPY_SCHEDULE` / `KAREN_SCHEDULE` /
+`DAISY_SCHEDULE` / `GENERIC_SCHEDULE`). When set, the value is a partial map
+keyed by day-of-week (`0` = Sunday through `6` = Saturday). Each entry may
+override `window` (`"morning"` or `"evening"`) and/or `shots` (array of
+peptide names). Days that are not present fall back to the base schedule.
+
+```json
+{
+  "1": { "window": "morning", "shots": ["Retatrutide", "MOTS-c"] },
+  "3": { "window": "evening", "shots": ["Diamond Glow"] }
+}
+```
+
+`workout`, `type`, and `fasting` always come from the base schedule -- the
+editor only exposes window and shots.
 
 ### daily_logs.workout
 
