@@ -469,6 +469,17 @@ function weekNum(profile) {
     return Math.max(1, Math.floor(daysSince(profile.program_start) / 7) + 1);
 }
 
+// 1-indexed week number for a single peptide, measured from its titration
+// anchor (falls back to program_start so existing schedules keep firing on
+// the same calendar week they did before migration 009).
+function peptideWeek(profile, peptide) {
+    if (!profile) return 1;
+    const anchor = (profile.titration_anchors && profile.titration_anchors[peptide])
+        || profile.program_start;
+    if (!anchor) return 1;
+    return Math.max(1, Math.floor(daysSince(anchor) / 7) + 1);
+}
+
 function getBaseSchedule(profile) {
     const n = (profile?.display_name || '').toLowerCase();
     if (n === 'grumpy' || n === 'miguel') return GRUMPY_SCHEDULE;
@@ -530,13 +541,16 @@ function getSchedule(profile, referenceDate) {
 
 // Returns the list of peptides whose latest applicable titration step
 // doesn't match the user's current_doses value (i.e. they're due to escalate).
+// Each step's `week` is interpreted relative to that peptide's anchor
+// (titration_anchors[peptide] || program_start), so a peptide added
+// mid-program starts at Wk 1 from its anchor, not from program_start.
 function getDueTitrations(profile) {
     const sched = (profile && profile.titration_schedules) || {};
     const doses = (profile && profile.current_doses) || {};
-    const wk = weekNum(profile);
     const due = [];
     Object.entries(sched).forEach(([peptide, steps]) => {
         if (!Array.isArray(steps) || steps.length === 0) return;
+        const wk = peptideWeek(profile, peptide);
         const applicable = steps
             .filter(s => s && typeof s.mg === 'number' && parseInt(s.week, 10) <= wk)
             .sort((a, b) => b.week - a.week)[0];
@@ -1228,18 +1242,20 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
     const dueTitrations = getDueTitrations(p);
     if (dueTitrations.length > 0) {
         dueTitrations.forEach(t => {
-            const fromTxt = (t.from == null) ? 'not set' : `${t.from}mg`;
+            const isStart = (t.from == null || t.from === 0);
+            const fromTxt = isStart ? 'not set' : `${t.from}mg`;
+            const headline = isStart ? `Time to start ${t.peptide}` : `Time to step up ${t.peptide}`;
             const safe = t.peptide.replace(/'/g, "\\'");
             html += `<div class="card stagger" style="border-color: rgba(245, 158, 11, 0.4); background: linear-gradient(145deg, rgba(120, 53, 15, 0.25), rgba(31, 41, 55, 0.6));">
                 <div class="flex items-center gap-3">
                     <div class="text-2xl">&#x1F4C8;</div>
                     <div class="flex-1">
-                        <div class="font-bold text-amber-400 text-sm">Time to step up ${t.peptide}</div>
-                        <div class="text-gray-300 text-xs">Week ${t.week} protocol: ${fromTxt} &rarr; <span class="text-amber-300 font-bold">${t.to}mg</span></div>
+                        <div class="font-bold text-amber-400 text-sm">${headline}</div>
+                        <div class="text-gray-300 text-xs">Week ${t.week} of ${t.peptide}: ${fromTxt} &rarr; <span class="text-amber-300 font-bold">${t.to}mg</span></div>
                     </div>
                 </div>
                 <div class="flex gap-2 mt-3">
-                    <button onclick="applyTitrationStep('${safe}', ${t.to})" class="btn-primary" style="padding:0.6rem 1rem; min-height:auto">Apply now</button>
+                    <button onclick="applyTitrationStep('${safe}', ${t.to})" class="btn-primary" style="padding:0.6rem 1rem; min-height:auto">${isStart ? 'Start now' : 'Apply now'}</button>
                     <button onclick="snoozeTitrationStep('${safe}', ${t.to})" class="btn-shot bg-gray-800 border border-gray-700 text-gray-300" style="box-shadow:none; padding:0.6rem 1rem; min-height:auto; width:auto">Not yet</button>
                 </div>
             </div>`;
@@ -2162,19 +2178,28 @@ function renderLabPeople(profiles, pens, types) {
                     const safePep = pep.replace(/'/g, "\\'");
                     const titration = u.titration_schedules || {};
                     const cycles = u.peptide_cycles || {};
+                    const anchors = u.titration_anchors || {};
                     const steps = Array.isArray(titration[pep]) ? titration[pep] : [];
                     const c = cycles[pep] || {};
                     const onCycleNow = isPeptideOnCycle(u, pep);
                     const cycleConfigured = c.on_weeks && c.off_weeks && c.anchor_date;
+                    const pepAnchor = anchors[pep] || u.program_start || '';
+                    const pepWk = peptideWeek(u, pep);
+                    const anchorImplicit = !anchors[pep];
                     html += `<div class="bg-gray-900/60 border border-gray-800 rounded-lg p-2.5 mb-2">
                         <div class="font-bold text-gray-200 text-sm mb-2">${pep} ${cycleConfigured ? (onCycleNow ? '<span class="text-emerald-400 text-[10px] ml-1">CYCLE ON</span>' : '<span class="text-gray-500 text-[10px] ml-1">CYCLE OFF</span>') : ''}</div>
+                        <div class="flex items-center gap-2 mb-2 text-[10px] text-gray-500">
+                            <span class="shrink-0">Wk <span class="text-amber-400 font-bold">${pepWk}</span> since</span>
+                            <input type="date" class="input-field text-[11px] py-1" style="max-width:140px" value="${pepAnchor}" onchange="setTitrationAnchor('${u.id}','${safePep}',this.value)" title="${anchorImplicit ? 'Defaulting to program start — set explicitly to anchor Wk 1 of this peptide' : 'Anchor for Wk 1 of this peptide'}">
+                            <button onclick="resetTitrationAnchor('${u.id}','${safePep}')" class="ml-auto text-amber-400 hover:text-amber-300 px-1.5 py-0.5 rounded hover:bg-gray-800 transition" title="Reset anchor to today">&#x21BB; today</button>
+                        </div>
                         <div class="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Steps</div>
                         <div class="space-y-1.5 mb-2">`;
                     if (steps.length === 0) {
                         html += `<div class="text-[11px] text-gray-600 italic">No steps planned &mdash; stays at current dose.</div>`;
                     } else {
                         steps.forEach((step, idx) => {
-                            const applied = (step.week <= userWk);
+                            const applied = (step.week <= pepWk);
                             html += `<div class="flex items-center gap-2">
                                 <span class="text-[10px] text-gray-500 w-7 shrink-0">Wk</span>
                                 <input type="number" class="input-field text-xs py-1.5" style="max-width:55px" value="${step.week || ''}" onchange="updateTitrationStep('${u.id}','${safePep}',${idx},'week',this.value)">
@@ -2472,8 +2497,14 @@ async function addUserPeptide(userId) {
         const user = profiles.find(p => p.id === userId);
         if(!user) return;
         const current = user.peptide_type ? user.peptide_type.split(' + ').map(s=>s.trim()).filter(Boolean) : [];
-        current.push(sel.value);
-        await updateProfileField(userId, { peptide_type: current.join(' + ') });
+        const peptide = sel.value;
+        if (current.includes(peptide)) return;
+        current.push(peptide);
+        // Anchor titration to today so future "Wk 1" means the first week
+        // on this peptide, not the first week of the user's program.
+        const anchors = { ...(user.titration_anchors || {}) };
+        if (!anchors[peptide]) anchors[peptide] = todayStr();
+        await updateProfileField(userId, { peptide_type: current.join(' + '), titration_anchors: anchors });
         await loadLab(true);
     } catch(e){ alert(e.message); }
 }
@@ -2505,14 +2536,13 @@ async function applyTitrationStep(peptide, targetMg) {
 }
 
 // "Snooze" = bump the step's week so it stops nagging this week.
-// Adds +1 week to whichever step is currently due.
+// Adds +1 to whichever step is currently due, in *peptide-relative* weeks.
 async function snoozeTitrationStep(peptide, targetMg) {
     try {
         const uid = currentSession.user.id;
         const sched = { ...(currentProfile.titration_schedules || {}) };
         const steps = (sched[peptide] || []).map(s => ({ ...s }));
-        const wk = weekNum(currentProfile);
-        // Find the matching step (highest applicable for current week with that mg).
+        const wk = peptideWeek(currentProfile, peptide);
         const applicable = steps
             .filter(s => s.mg === parseFloat(targetMg) && parseInt(s.week, 10) <= wk)
             .sort((a, b) => b.week - a.week)[0];
@@ -2549,13 +2579,45 @@ async function addTitrationStep(userId, peptide) {
         if (!user) return;
         const sched = { ...(user.titration_schedules || {}) };
         const steps = [...(sched[peptide] || [])];
-        const lastWeek = steps.length > 0 ? Math.max(...steps.map(s => s.week || 1)) : weekNum(user);
-        const lastMg = steps.length > 0 ? steps[steps.length - 1].mg : (user.current_doses?.[peptide] || 0);
-        steps.push({ week: lastWeek + 4, mg: lastMg });
+        const anchors = { ...(user.titration_anchors || {}) };
+        // Ensure the peptide has an anchor; if not, treat today as Wk 1.
+        const anchorWasMissing = !anchors[peptide];
+        if (anchorWasMissing) anchors[peptide] = todayStr();
+        let nextWeek, nextMg;
+        if (steps.length === 0) {
+            // First step on a fresh peptide: Wk 1 with current dose (or 0).
+            nextWeek = 1;
+            nextMg = user.current_doses?.[peptide] || 0;
+        } else {
+            const lastWeek = Math.max(...steps.map(s => s.week || 1));
+            nextWeek = lastWeek + 4;
+            nextMg = steps[steps.length - 1].mg || 0;
+        }
+        steps.push({ week: nextWeek, mg: nextMg });
         sched[peptide] = steps;
-        await updateProfileField(userId, { titration_schedules: sched });
+        const update = { titration_schedules: sched };
+        if (anchorWasMissing) update.titration_anchors = anchors;
+        await updateProfileField(userId, update);
         await loadLab(true);
     } catch (e) { alert(e.message); }
+}
+
+// Set or reset the titration anchor for a peptide (controls what "Wk 1" means).
+async function setTitrationAnchor(userId, peptide, date) {
+    try {
+        const profiles = await fetchAllProfiles();
+        const user = profiles.find(p => p.id === userId);
+        if (!user) return;
+        const anchors = { ...(user.titration_anchors || {}) };
+        if (date) anchors[peptide] = date;
+        else delete anchors[peptide];
+        await updateProfileField(userId, { titration_anchors: anchors });
+        await loadLab(true);
+    } catch (e) { alert(e.message); }
+}
+
+async function resetTitrationAnchor(userId, peptide) {
+    return setTitrationAnchor(userId, peptide, todayStr());
 }
 
 async function removeTitrationStep(userId, peptide, idx) {
