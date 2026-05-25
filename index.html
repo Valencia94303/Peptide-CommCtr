@@ -486,7 +486,11 @@ function getSchedule(profile) {
 function getShotMeta(entry) {
     if (!entry) return null;
     if (typeof entry === 'string') return { at: entry, mg: null, units: null };
-    if (typeof entry === 'object') return { at: entry.at || null, mg: entry.mg ?? null, units: entry.units ?? null };
+    if (typeof entry === 'object') return {
+        at: entry.at || null,
+        mg: (entry.mg == null) ? null : entry.mg,
+        units: (entry.units == null) ? null : entry.units
+    };
     return null;
 }
 
@@ -2106,7 +2110,7 @@ async function getUserScheduleOverride(userId) {
     // Normalize keys to numeric.
     const norm = {};
     for (let d = 0; d < 7; d++) {
-        const ov = override[d] ?? override[String(d)];
+        const ov = (override[d] != null) ? override[d] : override[String(d)];
         if (ov) norm[d] = { ...ov };
     }
     return { user, base, override: norm };
