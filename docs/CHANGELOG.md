@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Phase 3a: Barcode Food Scanner
+
+- New "Scan Food Barcode" button on the Daily Tracking card. Opens a camera modal that uses @zxing/library to decode EAN/UPC/Code-128/QR.
+- On detection, looks up the code in the public [Open Food Facts](https://world.openfoodfacts.org/) database, shows the product with per-serving (or per-100g) macros, and lets you confirm how many servings before adding.
+- Macros accumulate onto today's `calories`, `protein`, and `fiber` (so multiple scans across a day stack additively).
+- If the product isn't in Open Food Facts, falls back to a manual-entry form for the same scan flow.
+- No schema change required.
+
 ### Phase 2: Titration, Cycles, Daily Check-In
 
 - Dose titration schedules per peptide, per user. Admin defines `{week, mg}` steps in the Lab; dashboard surfaces a "Time to step up" banner when a step is due. Apply / Not yet buttons.
