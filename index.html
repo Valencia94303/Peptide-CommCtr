@@ -190,6 +190,7 @@
                         <div class="w-8 h-8 bg-gradient-to-br from-amber-500 to-amber-700 rounded-full flex items-center justify-center text-white font-bold text-xs" id="pm-avatar"></div>
                         <div><div id="pm-name" class="text-sm font-bold text-gray-100"></div><div class="text-[10px] text-gray-500">Team Member</div></div>
                     </div>
+                    <button onclick="toggleProfileMenu();showScreen('coach')" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F9E0; Coach</button>
                     <button onclick="openMyProtocol()" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F4D6; My Protocol Guide</button>
                     <button onclick="toggleProfileMenu();showScreen('measurements')" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F4CF; Body Measurements</button>
                     <div class="border-t border-gray-800"></div>
@@ -251,6 +252,16 @@
                 <button onclick="sendMessage()" class="btn-primary px-5 py-3 text-sm" style="width:auto;min-height:auto">Send</button>
             </div>
         </div>
+    </div>
+
+    <!-- ==================== COACH SCREEN ==================== -->
+    <div id="screen-coach" class="hidden fade-in">
+        <div class="sticky top-0 glass-header px-4 py-3 flex items-center justify-between z-40">
+            <button onclick="showScreen('dashboard')" class="text-gray-400 hover:text-white text-2xl leading-none p-1">&larr;</button>
+            <h2 class="text-lg font-bold text-amber-500">&#x1F9E0; Coach</h2>
+            <div class="w-8"></div>
+        </div>
+        <div id="coach-content" class="p-4 space-y-4 pb-8"></div>
     </div>
 
     <!-- ==================== MEASUREMENTS SCREEN ==================== -->
@@ -987,7 +998,7 @@ function setBtnLoading(id, loading) {
 // ╚══════════════════════════════════════════════════════════════╝
 
 let lastScreen = 'auth';
-const screenOrder = ['auth','dashboard','messages','lab','workout','shots','measurements','settings'];
+const screenOrder = ['auth','dashboard','messages','lab','workout','shots','measurements','coach','settings'];
 
 function showScreen(name) {
     const fromIdx = screenOrder.indexOf(lastScreen);
@@ -1016,6 +1027,7 @@ function showScreen(name) {
     if (name === 'workout') renderWorkoutPlan();
     if (name === 'shots') { showLoading('shots-content'); renderShotsSchedule(); }
     if (name === 'measurements') loadMeasurements();
+    if (name === 'coach') loadCoachScreen();
     if (name === 'settings') loadSettings();
 }
 
@@ -1391,6 +1403,17 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
         });
     }
 
+    // === COACH SUMMARY CARD ===
+    html += `<div class="card stagger" onclick="showScreen('coach')" style="cursor:pointer; border-color: rgba(168, 85, 247, 0.25);">
+        <div class="flex items-center justify-between mb-2">
+            <div class="section-title mb-0">&#x1F9E0; Today with your Coach</div>
+            <button onclick="event.stopPropagation(); refreshDashboardCoachCard()" class="text-xs text-gray-500 hover:text-amber-400">Refresh</button>
+        </div>
+        <div id="coach-card-content">
+            <div class="flex items-center gap-2 text-gray-500 text-sm"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Thinking...</div>
+        </div>
+    </div>`;
+
     // === TITRATION BANNER ===
     const dueTitrations = getDueTitrations(p);
     if (dueTitrations.length > 0) {
@@ -1668,6 +1691,8 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
 
     document.getElementById('dash-content').innerHTML = html;
     setTimeout(() => renderWeightChart(p, weightHist), 50);
+    // Fire-and-forget: load the coach card after the dashboard paints.
+    if (isViewingToday()) setTimeout(() => renderDashboardCoachCard(), 100);
 
     // Fire celebration for newly earned milestones (only on today's view)
     if (isViewingToday() && milestoneData.newlyEarned.length > 0) {
@@ -4118,6 +4143,330 @@ async function runRestore() {
     } catch (e) {
         alert('Restore failed: ' + e.message);
     }
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              15a. GEMINI AI COACH                           ║
+// ╚══════════════════════════════════════════════════════════════╝
+//
+// Three surfaces, one helper at the bottom (`callCoach`) that proxies through
+// the `gemini-coach` Supabase Edge Function so the API key never ships in HTML:
+//   - Daily summary card on the dashboard (cached in profile.coach_cache.daily).
+//   - Weekly review card (cached in profile.coach_cache.weekly), regenerated
+//     on the Sunday rollover.
+//   - Conversational Coach screen with persisted chat history.
+
+const COACH_SYSTEM_PROMPT = `You are an evidence-based personal health coach for a peptide-protocol weight-loss app called Peptide Command Center.
+
+GUIDELINES
+- Be specific, kind, and motivating. Tone: like a supportive nutrition-coach friend.
+- Ground every reply in the user's actual data when relevant. Avoid generic platitudes.
+- Use US units (lbs, oz, g, calories). Refer to the user by their display name when natural.
+- You are not a doctor. For dose changes, troubling side effects, or anything medical, recommend they discuss with their healthcare provider.
+- Keep responses tight. Daily summary: 2-3 sentences. Weekly review: ~150 words, bullets OK. Chat: match the question's depth.
+- The CONTEXT JSON below is the user's current state. Use it. If something is missing, say so plainly instead of inventing values.`;
+
+async function callCoach({ messages, max_tokens = 800, temperature = 0.6 }) {
+    const { data, error } = await sb.functions.invoke('gemini-coach', {
+        body: { system: COACH_SYSTEM_PROMPT, messages, max_tokens, temperature }
+    });
+    if (error) {
+        let detail = error.message || 'Coach call failed';
+        try {
+            if (typeof error.context?.json === 'function') {
+                const j = await error.context.json();
+                if (j?.error) detail = j.error;
+            }
+        } catch (_e) { /* ignore */ }
+        throw new Error(detail);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data?.text || '';
+}
+
+function _summarizeShotsByPeptide(logs) {
+    const out = {};
+    (logs || []).forEach(l => {
+        const shots = l.shots || {};
+        Object.entries(shots).forEach(([p, entry]) => {
+            const meta = getShotMeta(entry);
+            if (!meta) return;
+            if (!out[p]) out[p] = [];
+            out[p].push({ date: l.log_date, mg: meta.mg, units: meta.units });
+        });
+    });
+    return out;
+}
+
+async function buildCoachContext() {
+    const p = currentProfile || {};
+    const today = todayStr();
+    const wk = weekNum(p);
+    const sched = getSchedule(p);
+    const todaySched = sched[new Date(today + 'T12:00:00').getDay()] || {};
+
+    const [logsR, measR, todayLogR] = await Promise.all([
+        sb.from('daily_logs').select('*').eq('user_id', currentSession.user.id)
+            .order('log_date', { ascending: false }).limit(14),
+        sb.from('measurements').select('*').eq('user_id', currentSession.user.id)
+            .order('measured_date', { ascending: false }).limit(2),
+        sb.from('daily_logs').select('*').eq('user_id', currentSession.user.id).eq('log_date', today).maybeSingle()
+    ]);
+    const recent = logsR.data || [];
+    const meas = measR.data || [];
+    const todayLogFresh = todayLogR.data || null;
+
+    const weightSeries = recent.filter(l => l.weight).map(l => ({ date: l.log_date, lbs: parseFloat(l.weight) }));
+    const latestW = weightSeries[0]?.lbs ?? null;
+    let weeklyLossRate = null;
+    if (weightSeries.length >= 2) {
+        const earliest = weightSeries[weightSeries.length - 1];
+        const days = Math.max(1, Math.floor((new Date(weightSeries[0].date + 'T12:00:00') - new Date(earliest.date + 'T12:00:00')) / 86400000));
+        if (days >= 3) weeklyLossRate = Math.round(((earliest.lbs - weightSeries[0].lbs) / days) * 7 * 10) / 10;
+    }
+
+    const shotsByPep = _summarizeShotsByPeptide(recent);
+    const checkinTrend = recent.slice(0, 7).map(l => ({
+        date: l.log_date,
+        mood: l.mood, energy: l.energy,
+        nsv: l.nsv || null, notes: l.notes || null,
+        cal: l.calories, pro: l.protein, water: l.water, weight: l.weight,
+        workout_done: !!l.workout?.completed
+    }));
+
+    return {
+        today,
+        user: { name: p.display_name, current_week_in_program: wk, program_start: p.program_start },
+        goals: {
+            start_weight_lbs: p.start_weight, goal_weight_lbs: p.goal_weight,
+            calorie_target: p.calorie_target, protein_min_g: p.protein_min, protein_max_g: p.protein_max,
+            water_target_oz: p.water_target, fiber_target_g: p.fiber_target,
+            warning_threshold_lbs_per_week: p.warning_threshold
+        },
+        weight: {
+            current_lbs: latestW,
+            total_lost_lbs: (p.start_weight && latestW) ? Math.round((p.start_weight - latestW) * 10) / 10 : null,
+            remaining_lbs: (p.goal_weight && latestW) ? Math.round((latestW - p.goal_weight) * 10) / 10 : null,
+            weekly_loss_rate_lbs: weeklyLossRate,
+            recent_series: weightSeries.slice(0, 14)
+        },
+        peptide_stack: p.peptide_type || '',
+        current_doses: p.current_doses || {},
+        titration_schedules: p.titration_schedules || {},
+        peptide_cycles: p.peptide_cycles || {},
+        schedule_today: { window: todaySched.window, shots: todaySched.shots, workout: todaySched.workout, type: todaySched.type },
+        check_in_today: todayLogFresh ? {
+            mood: todayLogFresh.mood, energy: todayLogFresh.energy,
+            nsv: todayLogFresh.nsv, notes: todayLogFresh.notes,
+            cal: todayLogFresh.calories, pro: todayLogFresh.protein, water: todayLogFresh.water, fiber: todayLogFresh.fiber,
+            workout_done: !!todayLogFresh.workout?.completed
+        } : null,
+        recent_14d: checkinTrend,
+        shots_recent_by_peptide: shotsByPep,
+        measurements_recent: meas
+    };
+}
+
+function _sundayOf(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00');
+    const dow = d.getDay();
+    return shiftDate(dateStr, -dow);
+}
+
+async function getOrFreshenDailyCoach(force) {
+    const cache = currentProfile?.coach_cache?.daily;
+    const today = todayStr();
+    if (!force && cache && cache.date === today && cache.text) {
+        return { text: cache.text, cached: true };
+    }
+    const ctx = await buildCoachContext();
+    const userMsg = `CONTEXT (JSON):\n\`\`\`json\n${JSON.stringify(ctx, null, 2)}\n\`\`\`\n\nWrite a 2-3 sentence personal kickoff for today. Reference one specific thing from the data (a metric, a shot, the mood, a streak). End with a single concrete action.`;
+    const text = await callCoach({ messages: [{ role: 'user', content: userMsg }], max_tokens: 220, temperature: 0.7 });
+    const newCache = { ...(currentProfile.coach_cache || {}), daily: { date: today, text } };
+    await updateProfileField(currentSession.user.id, { coach_cache: newCache });
+    return { text, cached: false };
+}
+
+async function getOrFreshenWeeklyCoach(force) {
+    const cache = currentProfile?.coach_cache?.weekly;
+    const sun = _sundayOf(todayStr());
+    if (!force && cache && cache.week_starting === sun && cache.text) {
+        return { text: cache.text, cached: true };
+    }
+    const ctx = await buildCoachContext();
+    const userMsg = `CONTEXT (JSON):\n\`\`\`json\n${JSON.stringify(ctx, null, 2)}\n\`\`\`\n\nIt's the start of a new week. In ~150 words, give a weekly review with:\n1) What went well (1-2 specifics from the data).\n2) Patterns or red flags (adherence gaps, weight stalls, mood/energy trends, side-effect hints from notes).\n3) Two concrete things to focus on this week.\nUse short bullets where useful.`;
+    const text = await callCoach({ messages: [{ role: 'user', content: userMsg }], max_tokens: 600, temperature: 0.6 });
+    const newCache = { ...(currentProfile.coach_cache || {}), weekly: { week_starting: sun, text } };
+    await updateProfileField(currentSession.user.id, { coach_cache: newCache });
+    return { text, cached: false };
+}
+
+function _renderCoachMarkdown(text) {
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return esc(text || '')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong class="text-amber-300">$1</strong>')
+        .replace(/(^|\s)\*([^*]+)\*(?=\s|$)/g, '$1<em>$2</em>')
+        .replace(/^\s*[-•]\s+(.+)$/gm, '<div class="ml-3">• $1</div>')
+        .replace(/\n{2,}/g, '<div class="h-2"></div>')
+        .replace(/\n/g, '<br>');
+}
+
+async function renderDashboardCoachCard() {
+    const el = document.getElementById('coach-card-content');
+    if (!el) return;
+    el.innerHTML = '<div class="flex items-center gap-2 text-gray-500 text-sm"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Thinking...</div>';
+    try {
+        const { text, cached } = await getOrFreshenDailyCoach(false);
+        el.innerHTML = `<div class="text-gray-200 text-sm leading-relaxed">${_renderCoachMarkdown(text)}</div>
+            <div class="text-[10px] text-gray-600 uppercase tracking-wide mt-2">${cached ? 'Cached today' : 'Just generated'} &bull; tap to chat</div>`;
+    } catch (e) {
+        el.innerHTML = `<div class="text-xs text-red-400">${e.message}</div>
+            <div class="text-[10px] text-gray-600 mt-1">Coach unavailable. See setup steps in Settings.</div>`;
+    }
+}
+
+async function refreshDashboardCoachCard() {
+    try {
+        await getOrFreshenDailyCoach(true);
+        await renderDashboardCoachCard();
+    } catch (e) { alert(e.message); }
+}
+
+let coachLoaded = false;
+let coachMessages = [];
+
+async function loadCoachScreen() {
+    if (!currentProfile) return;
+    const el = document.getElementById('coach-content');
+    if (!coachLoaded) {
+        el.innerHTML = '<div class="flex items-center justify-center py-16"><div class="spinner"></div></div>';
+        try {
+            const { data, error } = await sb.from('coach_messages')
+                .select('*').eq('user_id', currentSession.user.id)
+                .order('created_at', { ascending: true }).limit(200);
+            if (error) throw error;
+            coachMessages = data || [];
+            coachLoaded = true;
+        } catch (e) {
+            el.innerHTML = `<div class="text-red-400 text-center py-6">${e.message}</div>`;
+            return;
+        }
+    }
+    renderCoachScreen();
+}
+
+function renderCoachScreen() {
+    const el = document.getElementById('coach-content');
+    if (!el) return;
+    let html = `<div class="card stagger">
+        <div class="flex items-center justify-between">
+            <div class="section-title mb-0">This Week's Review</div>
+            <button onclick="refreshWeeklyReview()" class="text-xs text-gray-500 hover:text-amber-400">Refresh</button>
+        </div>
+        <div id="coach-weekly" class="text-gray-200 text-sm leading-relaxed mt-2">
+            <div class="flex items-center gap-2 text-gray-500 text-xs"><div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Loading...</div>
+        </div>
+    </div>`;
+
+    html += `<div class="card stagger"><div class="section-title">Chat</div>`;
+    if (coachMessages.length === 0) {
+        html += `<div class="text-xs text-gray-500 mb-3">Ask anything. The coach already has your weight, shots, doses, check-ins, and cycle config.</div>
+            <div class="grid grid-cols-1 gap-1.5 mb-3">
+                <button onclick="askCoach('Why might I be plateauing this week?')" class="text-left text-xs bg-gray-800 hover:bg-gray-700 rounded-lg px-3 py-2 text-gray-300">&#x1F914; Why might I be plateauing?</button>
+                <button onclick="askCoach('Is my current dose escalation pace reasonable, or should I hold?')" class="text-left text-xs bg-gray-800 hover:bg-gray-700 rounded-lg px-3 py-2 text-gray-300">&#x1F4C8; Should I hold my next titration step?</button>
+                <button onclick="askCoach('What patterns do you see in my mood and energy over the past two weeks?')" class="text-left text-xs bg-gray-800 hover:bg-gray-700 rounded-lg px-3 py-2 text-gray-300">&#x1F9E0; Mood / energy patterns?</button>
+                <button onclick="askCoach('Anything in my data that suggests I should adjust my protein or calories?')" class="text-left text-xs bg-gray-800 hover:bg-gray-700 rounded-lg px-3 py-2 text-gray-300">&#x1F37D;&#xFE0F; Adjust calories or protein?</button>
+            </div>`;
+    } else {
+        html += `<div id="coach-msgs" class="space-y-2 max-h-[55vh] overflow-y-auto mb-3">`;
+        coachMessages.forEach(m => {
+            const isUser = m.role === 'user';
+            html += `<div class="${isUser ? 'flex justify-end' : 'flex justify-start'}">
+                <div class="${isUser ? 'bg-amber-700/40 border border-amber-800/40' : 'bg-gray-800 border border-gray-700/40'} rounded-2xl px-3 py-2 max-w-[85%]">
+                    <div class="text-sm text-gray-100">${_renderCoachMarkdown(m.content)}</div>
+                </div>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+    html += `<div class="flex gap-2">
+        <input type="text" id="coach-input" class="input-field flex-1" placeholder="Ask the coach..." onkeydown="if(event.key==='Enter')sendCoachMessage()">
+        <button onclick="sendCoachMessage()" class="btn-primary px-5" style="width:auto;min-height:auto">Send</button>
+    </div>`;
+    if (coachMessages.length > 0) {
+        html += `<button onclick="clearCoachChat()" class="text-[10px] text-gray-600 hover:text-red-400 mt-2 uppercase tracking-wide">Clear conversation</button>`;
+    }
+    html += `</div>`;
+
+    el.innerHTML = html;
+    setTimeout(() => {
+        const list = document.getElementById('coach-msgs');
+        if (list) list.scrollTop = list.scrollHeight;
+    }, 0);
+
+    loadCoachWeekly();
+}
+
+async function loadCoachWeekly() {
+    const el = document.getElementById('coach-weekly');
+    if (!el) return;
+    try {
+        const { text, cached } = await getOrFreshenWeeklyCoach(false);
+        el.innerHTML = `${_renderCoachMarkdown(text)}<div class="text-[10px] text-gray-600 uppercase tracking-wide mt-2">${cached ? 'Cached this week' : 'Just generated'}</div>`;
+    } catch (e) {
+        el.innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`;
+    }
+}
+
+async function refreshWeeklyReview() {
+    const el = document.getElementById('coach-weekly');
+    if (el) el.innerHTML = '<div class="flex items-center gap-2 text-gray-500 text-xs"><div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Regenerating...</div>';
+    try {
+        await getOrFreshenWeeklyCoach(true);
+        await loadCoachWeekly();
+    } catch (e) { alert(e.message); }
+}
+
+function askCoach(question) {
+    const input = document.getElementById('coach-input');
+    if (input) input.value = question;
+    sendCoachMessage();
+}
+
+async function sendCoachMessage() {
+    const input = document.getElementById('coach-input');
+    const text = (input?.value || '').trim();
+    if (!text) return;
+    input.value = '';
+    coachMessages.push({ role: 'user', content: text, created_at: new Date().toISOString() });
+    renderCoachScreen();
+    coachMessages.push({ role: 'assistant', content: '...', created_at: new Date().toISOString() });
+    renderCoachScreen();
+
+    try {
+        await sb.from('coach_messages').insert({ user_id: currentSession.user.id, role: 'user', content: text });
+
+        const ctx = await buildCoachContext();
+        const ctxMessage = { role: 'user', content: `CONTEXT (current state, JSON):\n\`\`\`json\n${JSON.stringify(ctx, null, 2)}\n\`\`\`\n\nThe next message starts our conversation. Reply concisely and ground your answer in this data.` };
+        const history = coachMessages.slice(0, -1).slice(-16).map(m => ({ role: m.role, content: m.content }));
+        const messages = [ctxMessage, ...history];
+        const reply = await callCoach({ messages, max_tokens: 800, temperature: 0.6 });
+        coachMessages[coachMessages.length - 1] = { role: 'assistant', content: reply, created_at: new Date().toISOString() };
+        renderCoachScreen();
+        await sb.from('coach_messages').insert({ user_id: currentSession.user.id, role: 'assistant', content: reply });
+    } catch (e) {
+        coachMessages[coachMessages.length - 1] = { role: 'assistant', content: 'Error: ' + e.message, created_at: new Date().toISOString() };
+        renderCoachScreen();
+    }
+}
+
+async function clearCoachChat() {
+    if (!confirm('Delete the entire chat history with the coach?')) return;
+    try {
+        await sb.from('coach_messages').delete().eq('user_id', currentSession.user.id);
+        coachMessages = [];
+        renderCoachScreen();
+    } catch (e) { alert(e.message); }
 }
 
 // ╔══════════════════════════════════════════════════════════════╗

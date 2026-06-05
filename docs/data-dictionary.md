@@ -135,6 +135,7 @@ primary key is the same UUID as `auth.users.id`, establishing a 1:1 relationship
 | schedule_override | jsonb | -- | NULL | Per-day overrides for the base schedule (Migration 007). Null = use defaults. |
 | titration_schedules | jsonb | -- | NULL | Per-peptide dose escalation steps (Migration 008). |
 | peptide_cycles | jsonb | -- | NULL | Per-peptide on/off cycle config (Migration 008). |
+| coach_cache | jsonb | -- | NULL | Cached daily + weekly Gemini coach output (Migration 009). |
 | created_at | timestamptz | -- | now() | Row creation timestamp |
 
 ### daily_logs

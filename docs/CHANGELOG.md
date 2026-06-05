@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Phase 3b: Gemini AI Coach
+
+- New Coach screen reachable from the profile menu. Top card is the auto-generated weekly review; bottom is a persistent chat with suggested starter questions.
+- Dashboard gains a "Today with your Coach" card that lazy-loads after first paint and links into the chat.
+- Three call types: daily summary (cached per calendar day), weekly review (cached per Sunday-of-the-week), and free-form chat. All three share one `gemini-coach` Supabase Edge Function that proxies Gemini 2.0 Flash so the API key never ships in client HTML.
+- Chat history persisted in `coach_messages` with per-user RLS.
+- Backed by Migration 009 + a new Edge Function. Setup requires a free Google AI Studio key as a Supabase EF secret.
+
 ### Phase 3a: Barcode Food Scanner
 
 - New "Scan Food Barcode" button on the Daily Tracking card. Opens a camera modal that uses @zxing/library to decode EAN/UPC/Code-128/QR.

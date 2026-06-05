@@ -146,6 +146,37 @@ Three Phase 2 features wanted small schema additions, so they were bundled into 
 
 ---
 
+## Migration 009 -- Gemini AI Coach
+
+**File:** `docs/migration-009-coach.sql`
+**Date:** 2026-06-05
+
+### Rationale
+
+Phase 3 includes a Gemini-powered coach with three surfaces: a daily summary card on the dashboard, a weekly review, and a persistent chat tab. Caching keeps Gemini calls low (one daily + one weekly per user, on demand) and the chat needs durable history that survives page reloads.
+
+### What it creates
+
+- `profiles.coach_cache jsonb` (nullable). Shape: `{ daily: { date, text }, weekly: { week_starting, text } }`. The client regenerates when the cached date no longer matches today / this week's Sunday.
+- `coach_messages` table:
+  - `id uuid PK`, `user_id uuid` (FK → profiles, ON DELETE CASCADE), `role text` (check: user|assistant|system), `content text`, `created_at timestamptz`.
+  - RLS: select/insert/delete restricted to `auth.uid() = user_id`. No update policy (append-only).
+  - Index `idx_coach_messages_user_created` on `(user_id, created_at desc)` for fast history loads.
+
+### Impact on application code
+
+- New JS section "15a. GEMINI AI COACH": `callCoach()` invokes the `gemini-coach` Edge Function (proxies to Gemini 2.0 Flash); `buildCoachContext()` assembles current state into a JSON blob; `getOrFreshenDailyCoach()` / `getOrFreshenWeeklyCoach()` handle the cache.
+- New `screen-coach` with weekly review on top and chat below; entry point added to the profile menu.
+- Dashboard gains a coach summary card at the top that lazy-loads after first paint.
+
+### External setup required
+
+1. Get a free Gemini API key from Google AI Studio (https://aistudio.google.com/apikey).
+2. In Supabase: Project Settings → Edge Functions → Secrets → add `GEMINI_API_KEY` with the key value.
+3. Deploy the Edge Function: see `supabase/functions/gemini-coach/index.ts`.
+
+---
+
 ## Writing New Migrations
 
 ### Naming convention
