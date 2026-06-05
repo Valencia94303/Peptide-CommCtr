@@ -4167,7 +4167,7 @@ GUIDELINES
 - The CONTEXT JSON below is the user's current state. Use it. If something is missing, say so plainly instead of inventing values.`;
 
 async function callCoach({ messages, max_tokens = 800, temperature = 0.6 }) {
-    const { data, error } = await sb.functions.invoke('gemini-coach', {
+    const { data, error } = await sb.functions.invoke('gemeni-coach', {
         body: { system: COACH_SYSTEM_PROMPT, messages, max_tokens, temperature }
     });
     if (error) {
