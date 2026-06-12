@@ -190,7 +190,7 @@
                         <div class="w-8 h-8 bg-gradient-to-br from-amber-500 to-amber-700 rounded-full flex items-center justify-center text-white font-bold text-xs" id="pm-avatar"></div>
                         <div><div id="pm-name" class="text-sm font-bold text-gray-100"></div><div class="text-[10px] text-gray-500">Team Member</div></div>
                     </div>
-                    <button onclick="toggleProfileMenu();showScreen('coach')" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F9E0; Coach</button>
+                    <button id="pm-coach" onclick="toggleProfileMenu();showScreen('coach')" class="hidden w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F9E0; Coach</button>
                     <button onclick="openMyProtocol()" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F4D6; My Protocol Guide</button>
                     <button onclick="toggleProfileMenu();showScreen('measurements')" class="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-gray-800 hover:text-amber-400 transition flex items-center gap-2.5">&#x1F4CF; Body Measurements</button>
                     <div class="border-t border-gray-800"></div>
@@ -1056,7 +1056,10 @@ function showScreen(name) {
     if (name === 'workout') renderWorkoutPlan();
     if (name === 'shots') { showLoading('shots-content'); renderShotsSchedule(); }
     if (name === 'measurements') loadMeasurements();
-    if (name === 'coach') loadCoachScreen();
+    if (name === 'coach') {
+        if (!COACH_ENABLED) { showScreen('dashboard'); return; }
+        loadCoachScreen();
+    }
     if (name === 'settings') loadSettings();
 }
 
@@ -1433,15 +1436,17 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
     }
 
     // === COACH SUMMARY CARD ===
-    html += `<div class="card stagger" onclick="showScreen('coach')" style="cursor:pointer; border-color: rgba(168, 85, 247, 0.25);">
-        <div class="flex items-center justify-between mb-2">
-            <div class="section-title mb-0">&#x1F9E0; Today with your Coach</div>
-            <button onclick="event.stopPropagation(); refreshDashboardCoachCard()" class="text-xs text-gray-500 hover:text-amber-400">Refresh</button>
-        </div>
-        <div id="coach-card-content">
-            <div class="flex items-center gap-2 text-gray-500 text-sm"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Thinking...</div>
-        </div>
-    </div>`;
+    if (COACH_ENABLED) {
+        html += `<div class="card stagger" onclick="showScreen('coach')" style="cursor:pointer; border-color: rgba(168, 85, 247, 0.25);">
+            <div class="flex items-center justify-between mb-2">
+                <div class="section-title mb-0">&#x1F9E0; Today with your Coach</div>
+                <button onclick="event.stopPropagation(); refreshDashboardCoachCard()" class="text-xs text-gray-500 hover:text-amber-400">Refresh</button>
+            </div>
+            <div id="coach-card-content">
+                <div class="flex items-center gap-2 text-gray-500 text-sm"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Thinking...</div>
+            </div>
+        </div>`;
+    }
 
     // === TITRATION BANNER ===
     const dueTitrations = getDueTitrations(p);
@@ -1721,7 +1726,7 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
     document.getElementById('dash-content').innerHTML = html;
     setTimeout(() => renderWeightChart(p, weightHist), 50);
     // Fire-and-forget: load the coach card after the dashboard paints.
-    if (isViewingToday()) setTimeout(() => renderDashboardCoachCard(), 100);
+    if (COACH_ENABLED && isViewingToday()) setTimeout(() => renderDashboardCoachCard(), 100);
 
     // Fire celebration for newly earned milestones (only on today's view)
     if (isViewingToday() && milestoneData.newlyEarned.length > 0) {
@@ -4211,6 +4216,20 @@ async function runRestore() {
 //   - Weekly review card (cached in profile.coach_cache.weekly), regenerated
 //     on the Sunday rollover.
 //   - Conversational Coach screen with persisted chat history.
+//
+// Feature flag: COACH_ENABLED gates all three UI surfaces. Flip to true when
+// the Gemini API key / billing is sorted. Until then the code stays in place
+// but the UI is hidden so users don't hit error states.
+
+const COACH_ENABLED = false;
+
+// Toggle visibility of the static profile-menu Coach button based on the flag.
+if (typeof document !== 'undefined' && COACH_ENABLED) {
+    document.addEventListener('DOMContentLoaded', () => {
+        const btn = document.getElementById('pm-coach');
+        if (btn) btn.classList.remove('hidden');
+    });
+}
 
 const COACH_SYSTEM_PROMPT = `You are an evidence-based personal health coach for a peptide-protocol weight-loss app called Peptide Command Center.
 
