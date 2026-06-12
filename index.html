@@ -609,15 +609,17 @@ function getDueTitrations(profile) {
     return due;
 }
 
-// Shot log entries may be either a legacy ISO string OR an object { at, mg, units }.
-// This helper returns a normalized view; returns null if not logged.
+// Shot log entries may be either a legacy ISO string OR an object
+// { at, mg, units, pen_id }. This helper returns a normalized view;
+// returns null if not logged.
 function getShotMeta(entry) {
     if (!entry) return null;
-    if (typeof entry === 'string') return { at: entry, mg: null, units: null };
+    if (typeof entry === 'string') return { at: entry, mg: null, units: null, pen_id: null };
     if (typeof entry === 'object') return {
         at: entry.at || null,
         mg: (entry.mg == null) ? null : entry.mg,
-        units: (entry.units == null) ? null : entry.units
+        units: (entry.units == null) ? null : entry.units,
+        pen_id: entry.pen_id || null
     };
     return null;
 }
@@ -830,6 +832,33 @@ async function insertPen(masterVialId, peptide, mlFromMaster, mlFreshWater, tota
 async function markPenDepleted(id) {
     const { error } = await sb.from('pens').update({ depleted: true }).eq('id', id);
     if (error) throw error;
+}
+
+async function fetchPenById(id) {
+    if (!id) return null;
+    const { data, error } = await sb.from('pens').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data || null;
+}
+
+// Apply a units delta to a pen's remaining_ml. Positive deltaUnits = subtract
+// (a new or larger shot); negative = refund. Auto-(un)depletes when crossing
+// zero. Returns the updated pen-id we touched (null if no pen was found).
+async function applyUnitsDeltaToPen(penId, deltaUnits) {
+    if (!penId || !deltaUnits) return null;
+    const pen = await fetchPenById(penId);
+    if (!pen) return null;
+    const cur = (pen.remaining_ml == null) ? Number(pen.total_ml || 0) : Number(pen.remaining_ml);
+    const deltaMl = Number(deltaUnits) / 100;
+    let next = cur - deltaMl;
+    if (next < 0) next = 0;
+    if (next > Number(pen.total_ml || next)) next = Number(pen.total_ml);
+    const updates = { remaining_ml: parseFloat(next.toFixed(3)) };
+    if (next <= 0) updates.depleted = true;
+    else if (pen.depleted && deltaUnits < 0) updates.depleted = false; // refund un-depletes
+    const { error } = await sb.from('pens').update(updates).eq('id', penId);
+    if (error) throw error;
+    return penId;
 }
 
 async function unassignPen(id) {
@@ -1972,10 +2001,31 @@ async function saveShot(peptide) {
         await ensureTodayLog();
         if (!todayLog.shots) todayLog.shots = {};
         const existing = getShotMeta(todayLog.shots[peptide]);
+        const oldUnits = (existing && typeof existing.units === 'number') ? existing.units : 0;
+        const newUnits = (typeof units === 'number' && !isNaN(units)) ? units : 0;
+
+        // Decide which pen to bill against. Prefer the pen the shot was
+        // originally drawn from (when editing). Otherwise, the user's current
+        // active pen for this peptide.
+        let penId = existing && existing.pen_id ? existing.pen_id : null;
+        if (!penId) {
+            const pen = (cachedMyPens || []).find(pe => pe.peptide === peptide && !pe.depleted);
+            penId = pen ? pen.id : null;
+        }
+
+        // Apply the unit delta against the pen. Edits compute delta from the
+        // prior value; fresh logs subtract the full new amount.
+        const deltaUnits = newUnits - oldUnits;
+        if (penId && deltaUnits !== 0) {
+            try { await applyUnitsDeltaToPen(penId, deltaUnits); }
+            catch (e) { console.warn('Pen update failed:', e); }
+        }
+
         todayLog.shots[peptide] = {
             at: existing?.at || new Date().toISOString(),
             mg: mg,
-            units: units
+            units: units,
+            pen_id: penId
         };
         await upsertTodayLog();
         closeModal();
@@ -1986,6 +2036,12 @@ async function saveShot(peptide) {
 async function undoShot(peptide) {
     try {
         await ensureTodayLog();
+        const existing = getShotMeta(todayLog.shots ? todayLog.shots[peptide] : null);
+        // Refund the units back to the pen that recorded them.
+        if (existing && existing.pen_id && typeof existing.units === 'number' && existing.units > 0) {
+            try { await applyUnitsDeltaToPen(existing.pen_id, -existing.units); }
+            catch (e) { console.warn('Pen refund failed:', e); }
+        }
         if (todayLog.shots && todayLog.shots[peptide]) delete todayLog.shots[peptide];
         await upsertTodayLog();
         closeModal();
