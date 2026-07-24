@@ -329,13 +329,13 @@ const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 // One Shot Window: morning OR evening per day, never both.
 // shots[] = individual peptides, each gets its own Log Shot button + dosing card.
 const GRUMPY_SCHEDULE = {
-    0: { window: 'evening', shots: ['Diamond Glow'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Bedtime \u2022 2hr post-meal' },
-    1: { window: 'morning', shots: ['Retatrutide','MOTS-c','Wolverine'], workout: '45-min Walk (The Big Reset)', type: 'walk', fasting: 'Fasted (water only) \u2022 30min before activity' },
-    2: { window: 'morning', shots: ['MOTS-c','Wolverine'], workout: 'Calisthenics (Power)', type: 'training', fasting: 'Fasted (water only) \u2022 30min before activity' },
-    3: { window: 'evening', shots: ['Diamond Glow'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Bedtime \u2022 2hr post-meal' },
-    4: { window: 'morning', shots: ['MOTS-c','Wolverine'], workout: '45-min Walk (Walking Flush)', type: 'walk', fasting: 'Fasted (water only) \u2022 30min before activity' },
-    5: { window: 'evening', shots: ['Diamond Glow'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Bedtime \u2022 2hr post-meal' },
-    6: { window: 'morning', shots: ['MOTS-c','Wolverine'], workout: 'Calisthenics (Power)', type: 'training', fasting: 'Fasted (water only) \u2022 30min before activity' }
+    0: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','CJC / Ipamorelin'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
+    1: { window: 'morning', shots: ['Retatrutide','AOD-9604','5-Amino-1MQ','MOTS-c','NAD+','CJC / Ipamorelin'], workout: '45-min Walk (The Big Reset)', type: 'walk', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
+    2: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','MOTS-c','CJC / Ipamorelin'], workout: 'Calisthenics (Power)', type: 'training', fasting: 'Fasted (water only) \u2022 inject 30min before activity' },
+    3: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','NAD+','CJC / Ipamorelin'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
+    4: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','MOTS-c','CJC / Ipamorelin'], workout: '45-min Walk (Walking Flush)', type: 'walk', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
+    5: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','NAD+','CJC / Ipamorelin'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
+    6: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','MOTS-c','CJC / Ipamorelin'], workout: 'Calisthenics (Power)', type: 'training', fasting: 'Fasted (water only) \u2022 inject 30min before activity' }
 };
 
 const KAREN_SCHEDULE = {
@@ -507,26 +507,36 @@ function getBaseSchedule(profile) {
     return GENERIC_SCHEDULE;
 }
 
-// Returns the effective injection window ('morning' | 'evening') for a peptide
-// for a given user. Order of resolution:
+// The three injection windows, in daily order, with display metadata.
+//   morning        = fasted (~7:30 AM, before food)
+//   postbreakfast  = with/after the first protein meal (~9:30 AM)
+//   evening        = bedtime (2+ hrs after last meal)
+const SHOT_WINDOWS = ['morning', 'postbreakfast', 'evening'];
+const WINDOW_META = {
+    morning:       { chip: '&#x1F305; Fasted',    full: '&#x1F305; Morning &mdash; fasted',      short: '&#x1F305; AM',      color: 'text-blue-400' },
+    postbreakfast: { chip: '&#x1F373; Post-BF',   full: '&#x1F373; Post-breakfast',              short: '&#x1F373; Post-BF', color: 'text-emerald-400' },
+    evening:       { chip: '&#x1F319; Bedtime',   full: '&#x1F319; Evening &mdash; bedtime',     short: '&#x1F319; PM',      color: 'text-purple-400' },
+};
+const isShotWindow = w => SHOT_WINDOWS.includes(w);
+
+// Returns the effective injection window for a peptide for a given user.
+// Order of resolution:
 //   1) user override via profile.peptide_window_overrides[peptide]
 //   2) peptide_types.default_window (from cachedPeptideTypes)
 //   3) fallback to 'morning'
 function getPeptideWindow(profile, peptide) {
     const overrides = (profile && profile.peptide_window_overrides) || {};
     const own = overrides[peptide];
-    if (own === 'morning' || own === 'evening') return own;
+    if (isShotWindow(own)) return own;
     const type = (cachedPeptideTypes || []).find(t => t && t.name === peptide);
-    if (type && (type.default_window === 'morning' || type.default_window === 'evening')) {
-        return type.default_window;
-    }
+    if (type && isShotWindow(type.default_window)) return type.default_window;
     return 'morning';
 }
 
-// Buckets a list of peptide names into { morning: [...], evening: [...] }
+// Buckets a list of peptide names into { morning, postbreakfast, evening }
 // using each peptide's effective window for the given profile.
 function groupShotsByWindow(profile, shots) {
-    const out = { morning: [], evening: [] };
+    const out = { morning: [], postbreakfast: [], evening: [] };
     (shots || []).forEach(name => {
         const w = getPeptideWindow(profile, name);
         (out[w] || out.morning).push(name);
@@ -934,7 +944,7 @@ async function estimatePenBurnRate(activePens) {
 }
 
 async function fetchPeptideTypes() {
-    const { data, error } = await sb.from('peptide_types').select('*').order('name');
+    const { data, error } = await sb.from('peptide_types').select('*').order('name').order('vial_size');
     if (error) throw error;
     cachedPeptideTypes = data || [];
     return cachedPeptideTypes;
@@ -942,13 +952,13 @@ async function fetchPeptideTypes() {
 
 async function insertPeptideType(name, vialSize, defaultWindow) {
     const payload = { name, vial_size: vialSize };
-    if (defaultWindow === 'morning' || defaultWindow === 'evening') payload.default_window = defaultWindow;
+    if (isShotWindow(defaultWindow)) payload.default_window = defaultWindow;
     const { error } = await sb.from('peptide_types').insert(payload);
     if (error) throw error;
 }
 
 async function updatePeptideTypeWindow(id, window) {
-    const w = (window === 'evening') ? 'evening' : 'morning';
+    const w = isShotWindow(window) ? window : 'morning';
     const { error } = await sb.from('peptide_types').update({ default_window: w }).eq('id', id);
     if (error) throw error;
 }
@@ -1478,16 +1488,14 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
     // can mix AM (e.g. Semax fasted) with PM (e.g. Diamond Glow bedtime).
     const workoutIsMorning = todaySched.window === 'morning';
     const grouped = groupShotsByWindow(p, todaySched.shots || []);
-    const hasAM = grouped.morning.length > 0;
-    const hasPM = grouped.evening.length > 0;
-    const hasShots = hasAM || hasPM;
-    const headerLabel = (hasAM && hasPM)
-        ? '&#x1F305; Morning &bull; &#x1F319; Evening'
-        : hasAM ? '&#x1F305; Morning Fasted'
-        : hasPM ? '&#x1F319; Evening Bedtime'
+    const activeWindows = SHOT_WINDOWS.filter(k => grouped[k].length > 0);
+    const hasShots = activeWindows.length > 0;
+    const headerLabel = activeWindows.length > 1
+        ? activeWindows.map(k => WINDOW_META[k].chip).join(' &bull; ')
+        : hasShots ? WINDOW_META[activeWindows[0]].chip
         : (workoutIsMorning ? '&#x1F305; Morning' : '&#x1F319; Evening');
-    const headerColor = (hasAM && hasPM) ? 'text-amber-400'
-        : hasAM ? 'text-blue-400'
+    const headerColor = activeWindows.length > 1 ? 'text-amber-400'
+        : hasShots ? WINDOW_META[activeWindows[0]].color
         : 'text-purple-400';
 
     html += `<div class="card card-glow card-breathe stagger">
@@ -1543,15 +1551,11 @@ async function renderDashboard(p, log, pens, masters, weightHist, rate, latestW,
     };
 
     if (hasShots) {
-        const showLabels = hasAM && hasPM;
-        if (hasAM) {
-            if (showLabels) html += `<div class="text-[10px] font-bold text-blue-400 uppercase tracking-[0.12em] mb-2 mt-1">&#x1F305; Morning &mdash; fasted</div>`;
-            grouped.morning.forEach(pep => { html += renderShotButton(pep); });
-        }
-        if (hasPM) {
-            if (showLabels) html += `<div class="text-[10px] font-bold text-purple-400 uppercase tracking-[0.12em] mt-3 mb-2">&#x1F319; Evening &mdash; bedtime</div>`;
-            grouped.evening.forEach(pep => { html += renderShotButton(pep); });
-        }
+        const showLabels = activeWindows.length > 1;
+        activeWindows.forEach((k, i) => {
+            if (showLabels) html += `<div class="text-[10px] font-bold ${WINDOW_META[k].color} uppercase tracking-[0.12em] mb-2 ${i > 0 ? 'mt-3' : 'mt-1'}">${WINDOW_META[k].full}</div>`;
+            grouped[k].forEach(pep => { html += renderShotButton(pep); });
+        });
     } else {
         html += '<div class="text-center py-4"><div class="text-2xl mb-1">&#x1F9D8;</div><div class="text-gray-500 text-sm">No shots today \u2014 recovery focus</div></div>';
     }
@@ -2222,8 +2226,9 @@ function renderLabMix(masters, pens, types, profiles) {
     html += `<div class="card"><div class="section-title">&#x1F9EA; Step 1: Reconstitute Master Vial</div>
         <p class="text-xs text-gray-500 mb-3">Add BAC water to an unmixed vial. This creates a Mother Vial you'll draw from later.</p>
         <div class="space-y-3">
-            <div><label class="label">Peptide</label><select class="input-field" id="master-peptide"><option value="">Select...</option>
-                ${types.map(t=>`<option>${t.name}</option>`).join('')}</select></div>
+            <div><label class="label">Peptide</label><select class="input-field" id="master-peptide" onchange="onMasterPeptideChange()"><option value="">Select...</option>
+                ${types.map(t=>`<option value="${t.name}" data-size="${t.vial_size||''}" data-mg="${parseVialMg(t.vial_size)}">${t.name}${t.vial_size?` &mdash; ${t.vial_size}`:''}</option>`).join('')}</select></div>
+            <div id="master-recon-ref" class="hidden"></div>
             <div class="grid grid-cols-2 gap-3">
                 <div><label class="label">Total MG in vial</label><input type="number" inputmode="decimal" class="input-field" id="master-mg" placeholder="e.g. 20"></div>
                 <div><label class="label">BAC Water (mL)</label><input type="number" inputmode="decimal" step="0.1" class="input-field" id="master-water" placeholder="e.g. 2"></div>
@@ -2374,7 +2379,7 @@ function renderLabPeople(profiles, pens, types) {
                 </div>`;
             const doses = u.current_doses || {};
             const wOverrides = u.peptide_window_overrides || {};
-            const available = types.filter(t => !stack.includes(t.name));
+            const available = [...new Set(types.map(t => t.name))].filter(n => !stack.includes(n));
             if (stack.length === 0) {
                 html += `<div class="text-xs text-gray-600 italic mb-2">No peptides in stack &mdash; add one below.</div>`;
             } else {
@@ -2384,15 +2389,16 @@ function renderLabPeople(profiles, pens, types) {
                     const pen = pens.find(p => p.peptide === pep);
                     const preview = (pen && mg) ? calcUnitsFromConc(mg, pen.concentration)+' units @ '+pen.concentration+' mg/mL' : '';
                     const w = getPeptideWindow(u, pep);
-                    const overridden = (wOverrides[pep] === 'morning' || wOverrides[pep] === 'evening');
+                    const overridden = isShotWindow(wOverrides[pep]);
                     const safePep = pep.replace(/'/g, "\\'");
                     html += `<div class="bg-gray-900/60 rounded-lg p-2">
                         <div class="flex items-center gap-2 mb-1.5">
                             <button onclick="removeUserPeptide('${u.id}','${pep}')" class="text-gray-600 hover:text-red-400 text-sm shrink-0">&times;</button>
                             <span class="text-xs text-gray-200 font-semibold flex-1 truncate">${pep}</span>
                             <select class="text-[10px] py-0.5 px-1.5 bg-gray-800 border border-gray-700 rounded ${overridden ? 'text-amber-400 font-bold' : 'text-gray-400'}" onchange="setUserPeptideWindow('${u.id}','${safePep}',this.value)" title="When this peptide is taken. 'Default' falls back to the peptide type's global setting.">
-                                <option value="" ${overridden?'':'selected'}>${w === 'morning' ? '&#x1F305; AM (default)' : '&#x1F319; PM (default)'}</option>
+                                <option value="" ${overridden?'':'selected'}>${(WINDOW_META[w]||WINDOW_META.morning).short} (default)</option>
                                 <option value="morning" ${wOverrides[pep]==='morning'?'selected':''}>&#x1F305; AM</option>
+                                <option value="postbreakfast" ${wOverrides[pep]==='postbreakfast'?'selected':''}>&#x1F373; Post-BF</option>
                                 <option value="evening" ${wOverrides[pep]==='evening'?'selected':''}>&#x1F319; PM</option>
                             </select>
                         </div>
@@ -2408,7 +2414,7 @@ function renderLabPeople(profiles, pens, types) {
             if (available.length > 0) {
                 html += `<div class="flex items-center gap-2 mt-2 pt-2 border-t border-gray-800">
                     <select class="input-field text-xs py-2 flex-1" id="add-pep-${u.id}"><option value="">Add peptide...</option>
-                        ${available.map(t=>`<option value="${t.name}">${t.name}</option>`).join('')}</select>
+                        ${available.map(n=>`<option value="${n}">${n}</option>`).join('')}</select>
                     <button onclick="addUserPeptide('${u.id}')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold px-3 py-2 rounded-lg transition active:scale-95">+</button>
                 </div>`;
             }
@@ -2424,7 +2430,7 @@ function renderLabPeople(profiles, pens, types) {
             // Partition the user's stack by each peptide's effective window so
             // chips render under the right AM/PM row for each day. A day can
             // have shots in one or both windows independently.
-            const stackByWindow = { morning: [], evening: [] };
+            const stackByWindow = { morning: [], postbreakfast: [], evening: [] };
             stack.forEach(pep => {
                 const w = getPeptideWindow(u, pep);
                 (stackByWindow[w] || stackByWindow.morning).push(pep);
@@ -2450,7 +2456,7 @@ function renderLabPeople(profiles, pens, types) {
                     const renderChipRow = (label, color, peps) => {
                         if (peps.length === 0) return '';
                         let row = `<div class="flex items-center gap-1.5 flex-wrap mt-1">
-                            <span class="text-[10px] font-bold ${color} w-10 shrink-0">${label}</span>`;
+                            <span class="text-[10px] font-bold ${color} w-16 shrink-0">${label}</span>`;
                         peps.forEach(pep => {
                             const active = shots.includes(pep);
                             const safe = pep.replace(/'/g, "\\'");
@@ -2459,8 +2465,9 @@ function renderLabPeople(profiles, pens, types) {
                         row += `</div>`;
                         return row;
                     };
-                    html += renderChipRow('&#x1F305; AM', 'text-blue-400', stackByWindow.morning);
-                    html += renderChipRow('&#x1F319; PM', 'text-purple-400', stackByWindow.evening);
+                    SHOT_WINDOWS.forEach(k => {
+                        html += renderChipRow(WINDOW_META[k].short, WINDOW_META[k].color, stackByWindow[k]);
+                    });
                 }
                 html += `</div>`;
             }
@@ -2575,7 +2582,7 @@ function renderLabInventory(inv, types) {
     } else {
         html += `<div class="space-y-2 mb-3">`;
         types.forEach(t => {
-            const w = (t.default_window === 'evening') ? 'evening' : 'morning';
+            const w = isShotWindow(t.default_window) ? t.default_window : 'morning';
             html += `<div class="flex items-center gap-2 bg-gray-800 rounded-lg p-3">
                 <div class="flex-1 min-w-0">
                     <div class="text-sm text-gray-200 font-medium truncate">${t.name}</div>
@@ -2583,6 +2590,7 @@ function renderLabInventory(inv, types) {
                 </div>
                 <select class="text-[11px] py-1 px-2 bg-gray-900 border border-gray-700 rounded text-gray-300" onchange="setPeptideTypeWindow('${t.id}', this.value)" title="Default time-of-day for this peptide. Users can override per-person.">
                     <option value="morning" ${w==='morning'?'selected':''}>&#x1F305; AM</option>
+                    <option value="postbreakfast" ${w==='postbreakfast'?'selected':''}>&#x1F373; Post-BF</option>
                     <option value="evening" ${w==='evening'?'selected':''}>&#x1F319; PM</option>
                 </select>
                 <button onclick="removePeptideType('${t.id}','${t.name}')" class="text-gray-600 hover:text-red-400 text-sm px-2 py-1">&times;</button>
@@ -2593,8 +2601,9 @@ function renderLabInventory(inv, types) {
     html += `<div class="flex gap-2">
         <input type="text" class="input-field text-sm py-2 flex-1" id="new-pep-name" placeholder="Peptide name">
         <input type="text" class="input-field text-sm py-2" style="max-width:80px" id="new-pep-size" placeholder="e.g. 10mg">
-        <select class="input-field text-sm py-2" style="max-width:90px" id="new-pep-window">
+        <select class="input-field text-sm py-2" style="max-width:110px" id="new-pep-window">
             <option value="morning">&#x1F305; AM</option>
+            <option value="postbreakfast">&#x1F373; Post-BF</option>
             <option value="evening">&#x1F319; PM</option>
         </select>
         <button onclick="addPeptideType()" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition active:scale-95 shrink-0">Add</button>
@@ -2655,6 +2664,93 @@ function updateMixCalc() {
     const r=document.getElementById('mix-result'), u=document.getElementById('mix-units');
     if(mg&&water){ const conc=mg/water; r.innerHTML=`<div class="text-amber-400 font-bold">${conc.toFixed(2)} mg/mL</div><div class="text-gray-400 text-xs">${(water*100).toFixed(0)} total units &bull; ${(mg/(water*100)).toFixed(4)} mg/unit</div>`; } else { r.innerHTML='Enter values above'; }
     if(mg&&water&&dose){ const conc=mg/water; u.textContent=calcUnitsFromConc(dose,conc)+' units'; } else { u.innerHTML='&mdash;'; }
+}
+
+// ─── Master-vial reconstitution reference ───────────────────────────
+// Reconstitution formulas keyed by "<name>||<vial_size>", because the same
+// peptide can carry different concentrations across protocols/sizes.
+// Recommended BAC water = vial mg ÷ conc. Current 270lb stack carries
+// dose/pull/freq; legacy household sizes carry just the mix ratio.
+// Keep in sync with docs/Master-Mixing-Reference.md.
+const RECON_REFERENCE = {
+    // Current concentrated SubQ stack (270 lb)
+    'Retatrutide||30mg':      { conc: 20,  dose: '5.0 mg',      pull: '25 units', freq: '1×/week (Mon)' },
+    'AOD-9604||10mg':         { conc: 5,   dose: '500 mcg',     pull: '10 units', freq: 'Daily' },
+    '5-Amino-1MQ||50mg':      { conc: 20,  dose: '5.0 mg',      pull: '25 units', freq: 'Daily' },
+    'MOTS-c||40mg':           { conc: 10,  dose: '0.5 mg',      pull: '5 units (10u @ 8mL)', freq: '4×/week (M/T/Th/S)' },
+    'NAD+||1000mg':           { conc: 400, dose: '100 mg',      pull: '25 units', freq: '3×/week (M/W/F)' },
+    'CJC / Ipamorelin||10mg': { conc: 5,   dose: '250 mcg ea.', pull: '10 units', freq: 'Daily' },
+    // Legacy household sizes (mix ratio only)
+    'Retatrutide||20mg':      { conc: 10 },
+    'Wolverine||20mg':        { conc: 10 },
+    'MOTS-c||15mg':           { conc: 10 },
+    'Diamond Glow||70mg':     { conc: 10 },
+    'Tirzepatide||10mg':      { conc: 5  },
+};
+
+// Pull the leading number out of a vial-size label like "40mg" or "1000mg".
+function parseVialMg(size) {
+    if (!size) return '';
+    const m = String(size).match(/([\d.]+)/);
+    return m ? parseFloat(m[1]) : '';
+}
+
+// Case/spacing-tolerant lookup on the "<name>||<size>" key.
+function reconRefFor(name, size) {
+    if (!name) return null;
+    const target = `${name}||${size || ''}`;
+    if (RECON_REFERENCE[target]) return RECON_REFERENCE[target];
+    const norm = s => s.toLowerCase().replace(/\s+/g, '');
+    const key = Object.keys(RECON_REFERENCE).find(k => norm(k) === norm(target));
+    return key ? RECON_REFERENCE[key] : null;
+}
+
+// When a peptide is picked in the Reconstitute form, show its reconstitution
+// formula and pre-fill the MG + BAC-water fields (user can still override).
+function onMasterPeptideChange() {
+    const sel = document.getElementById('master-peptide');
+    const opt = sel && sel.selectedOptions[0];
+    const box = document.getElementById('master-recon-ref');
+    if (!box) return;
+
+    const name = (opt && opt.value) || '';
+    if (!name) { box.className = 'hidden'; box.innerHTML = ''; return; }
+
+    const size = (opt.dataset.size) || '';
+    const mg = parseFloat(opt.dataset.mg) || parseVialMg(size);
+    const ref = reconRefFor(name, size);
+    const mgEl = document.getElementById('master-mg');
+    const waterEl = document.getElementById('master-water');
+
+    if (ref) {
+        const water = mg ? +(mg / ref.conc).toFixed(2) : null;
+        if (mgEl && mg) mgEl.value = mg;
+        if (waterEl && water != null) waterEl.value = water;
+        const protocolGrid = ref.dose ? `
+            <div class="text-gray-400 mt-1.5 grid grid-cols-3 gap-1 text-center">
+                <div class="bg-gray-900/50 rounded p-1"><div class="text-[10px] text-gray-500 uppercase">Dose</div>${ref.dose}</div>
+                <div class="bg-gray-900/50 rounded p-1"><div class="text-[10px] text-gray-500 uppercase">Pull</div>${ref.pull}</div>
+                <div class="bg-gray-900/50 rounded p-1"><div class="text-[10px] text-gray-500 uppercase">Freq</div>${ref.freq}</div>
+            </div>` : '';
+        box.className = 'bg-amber-950/30 border border-amber-800/40 rounded-lg p-3 text-xs';
+        box.innerHTML = `
+            <div class="flex items-center gap-2 mb-1.5">
+                <span class="text-amber-300 font-bold">&#x1F4D6; ${name}${size ? ` ${size}` : ''} master mix</span>
+                <span class="text-[10px] text-amber-500/80 uppercase tracking-wide">reference</span>
+            </div>
+            <div class="text-gray-200">
+                ${mg ? `<span class="font-bold">${mg}mg</span> vial &rarr; add <span class="font-bold text-amber-300">${water} mL</span> BAC water &rarr; <span class="font-bold">${ref.conc} mg/mL</span> master`
+                     : `Target concentration <span class="font-bold text-amber-300">${ref.conc} mg/mL</span> &mdash; BAC water = mg &divide; ${ref.conc}`}
+            </div>
+            ${protocolGrid}
+            <div class="text-[10px] text-gray-500 mt-1.5">MG + BAC water pre-filled &mdash; adjust if your vial differs.</div>`;
+    } else {
+        if (mgEl && mg) mgEl.value = mg;
+        box.className = 'bg-gray-800 border border-gray-700 rounded-lg p-3 text-xs text-gray-400';
+        box.innerHTML = `<span class="text-gray-300 font-semibold">${name}</span> &mdash; no stored formula. Enter BAC water to reach your target mg/mL.`;
+    }
+    // Refresh the concentration preview below.
+    if (mgEl) mgEl.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // Lab actions — Master Vial preview
@@ -3036,7 +3132,7 @@ async function setUserPeptideWindow(userId, peptide, window) {
         const user = profiles.find(p => p.id === userId);
         if (!user) return;
         const overrides = { ...(user.peptide_window_overrides || {}) };
-        if (window === 'morning' || window === 'evening') overrides[peptide] = window;
+        if (isShotWindow(window)) overrides[peptide] = window;
         else delete overrides[peptide];
         await updateProfileField(userId, { peptide_window_overrides: overrides });
         await loadLab(true);
@@ -3552,16 +3648,18 @@ async function renderShotsSchedule() {
         const shots = day.shots || [];
         const hasShots = shots.length > 0;
         const grouped = groupShotsByWindow(p, shots);
-        const dHasAM = grouped.morning.length > 0;
-        const dHasPM = grouped.evening.length > 0;
+        const dActive = SHOT_WINDOWS.filter(k => grouped[k].length > 0);
         const dayLog = logByDow[d];
-        let chipIcon, chipLabel, chipColor;
-        if (dHasAM && dHasPM) {
-            chipIcon = '&#x1F305;&#x1F319;'; chipLabel = 'AM + PM'; chipColor = 'text-amber-400';
-        } else if (dHasAM) {
-            chipIcon = '&#x1F305;'; chipLabel = 'Morning (Fasted)'; chipColor = 'text-blue-400';
-        } else if (dHasPM) {
-            chipIcon = '&#x1F319;'; chipLabel = 'Evening (Bedtime)'; chipColor = 'text-purple-400';
+        let chipIcon = '', chipLabel, chipColor;
+        if (dActive.length > 1) {
+            chipIcon = dActive.map(k => WINDOW_META[k].chip.split(' ')[0]).join('');
+            chipLabel = dActive.map(k => WINDOW_META[k].chip.split(' ').slice(1).join(' ')).join(' + ');
+            chipColor = 'text-amber-400';
+        } else if (dActive.length === 1) {
+            const k = dActive[0];
+            chipIcon = WINDOW_META[k].chip.split(' ')[0];
+            chipLabel = WINDOW_META[k].chip.split(' ').slice(1).join(' ');
+            chipColor = WINDOW_META[k].color;
         } else {
             const isMorning = day.window === 'morning';
             chipIcon = isMorning ? '&#x1F305;' : '&#x1F319;';
@@ -3602,15 +3700,11 @@ async function renderShotsSchedule() {
 
         if (hasShots) {
             let total = 0;
-            const showLabels = dHasAM && dHasPM;
-            if (dHasAM) {
-                if (showLabels) html += `<div class="text-[10px] font-bold text-blue-400 uppercase tracking-[0.12em] mt-1">&#x1F305; AM</div>`;
-                grouped.morning.forEach((pep, idx) => { html += renderRow(pep, idx, total++); });
-            }
-            if (dHasPM) {
-                if (showLabels) html += `<div class="text-[10px] font-bold text-purple-400 uppercase tracking-[0.12em] mt-2">&#x1F319; PM</div>`;
-                grouped.evening.forEach((pep, idx) => { html += renderRow(pep, idx, total++); });
-            }
+            const showLabels = dActive.length > 1;
+            dActive.forEach((k, wi) => {
+                if (showLabels) html += `<div class="text-[10px] font-bold ${WINDOW_META[k].color} uppercase tracking-[0.12em] ${wi > 0 ? 'mt-2' : 'mt-1'}">${WINDOW_META[k].short}</div>`;
+                grouped[k].forEach((pep, idx) => { html += renderRow(pep, idx, total++); });
+            });
             html += `<div class="text-xs text-gray-500 mt-1">${day.fasting}</div>`;
         } else {
             html += `<div class="text-gray-500 text-sm py-1">No shots scheduled</div>`;

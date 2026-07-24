@@ -177,6 +177,77 @@ Phase 3 includes a Gemini-powered coach with three surfaces: a daily summary car
 
 ---
 
+## Migration 012 -- Multiple Vial Sizes Per Peptide
+
+**File:** `docs/migration-012-peptide-multi-size.sql`
+**Date:** 2026-07-24
+
+### Rationale
+
+`peptide_types.name` carried a `UNIQUE` constraint, so each peptide could only
+have one vial size on record. Adding a peptide that ships in a second size --
+e.g. MOTS-c at both 15mg and 40mg -- failed with a duplicate-key error, which the
+UI surfaced as a raw Postgres message. The two sizes reconstitute differently
+(15mg → 1.5mL vs 40mg → 4.0mL at 10 mg/mL), so both need to be trackable.
+
+### What it changes
+
+- Drops the `peptide_types_name_key` UNIQUE constraint on `name`.
+- Adds a composite `UNIQUE (name, vial_size)` constraint. The same peptide can now
+  be stocked in multiple sizes; exact (name, size) duplicates are still rejected.
+
+### Impact on application code
+
+- The Reconstitute Master Vial form's peptide dropdown now lists one option per
+  (name, vial_size) row, carrying `data-mg` / `data-size` so the reference guide
+  and auto-fill know the vial size.
+- Places that treat a peptide as a scheduling identity (the People tab
+  "Add peptide" dropdown) de-duplicate by name, so a peptide with two sizes still
+  appears once there.
+- `fetchPeptideTypes()` orders by `name` then `vial_size` for stable display.
+- New in-app reconstitution reference guide (`RECON_REFERENCE` in `index.html`)
+  shows the mix formula + dose/pull/frequency and pre-fills MG + BAC water when a
+  peptide is selected. Keep it in sync with `docs/Master-Mixing-Reference.md`.
+
+---
+
+## Migration 014 -- Post-Breakfast Injection Window
+
+**File:** `docs/migration-014-postbreakfast-window.sql`
+**Date:** 2026-07-24
+
+### Rationale
+
+Morning shots needed to split into two blocks: **fasted** (~7:30 AM, before food)
+and **post-breakfast** (~9:30 AM, with/after the first protein meal, to buffer
+sting). NAD+ belongs in the post-breakfast block. The app previously supported
+only `morning` / `evening`.
+
+### What it changes
+
+- Widens the `peptide_types_default_window_check` constraint to allow a third
+  value: `check (default_window in ('morning','postbreakfast','evening'))`.
+- Sets NAD+ (both vial sizes) to `default_window = 'postbreakfast'`.
+- `profiles.peptide_window_overrides` is unconstrained JSONB; the client
+  validates window values with `isShotWindow()` before writing.
+
+### Impact on application code
+
+- New `SHOT_WINDOWS` / `WINDOW_META` constants in `index.html` drive a
+  three-window model. `groupShotsByWindow()` now returns
+  `{ morning, postbreakfast, evening }`.
+- The dashboard "Today's Protocol", the weekly protocol view, and the People-tab
+  schedule editor all iterate the active windows and render a labelled section
+  per window (🌅 Fasted / 🍳 Post-breakfast / 🌙 Bedtime).
+- All window `<select>` controls (peptide-type default, add-peptide, per-user
+  override) gained a "Post-BF" option; the coercion helpers
+  (`updatePeptideTypeWindow`, `setUserPeptideWindow`, `insertPeptideType`) accept
+  it via `isShotWindow()`.
+- Day-level `window` (workout/fasting context) stays binary morning/evening; the
+  third window is a per-peptide shot attribute only.
+
+---
+
 ## Writing New Migrations
 
 ### Naming convention
