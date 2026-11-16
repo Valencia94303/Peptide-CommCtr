@@ -328,14 +328,16 @@ const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 // One Shot Window: morning OR evening per day, never both.
 // shots[] = individual peptides, each gets its own Log Shot button + dosing card.
+// Phase 1 Protocol (Weeks 1–4, started 2026-11-16). Source: 'Phase 1 Protocol Schedule.pdf'.
+// Semax rests Sat/Sun; MOTS-c rests Wed/Fri/Sun; 5-Amino-1MQ, CJC / Ipamorelin & LC-526 held for Phase 2.
 const GRUMPY_SCHEDULE = {
-    0: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','CJC / Ipamorelin'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
-    1: { window: 'morning', shots: ['Retatrutide','AOD-9604','5-Amino-1MQ','MOTS-c','NAD+','CJC / Ipamorelin'], workout: '45-min Walk (The Big Reset)', type: 'walk', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
-    2: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','MOTS-c','CJC / Ipamorelin'], workout: 'Calisthenics (Power)', type: 'training', fasting: 'Fasted (water only) \u2022 inject 30min before activity' },
-    3: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','NAD+','CJC / Ipamorelin'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
-    4: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','MOTS-c','CJC / Ipamorelin'], workout: '45-min Walk (Walking Flush)', type: 'walk', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
-    5: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','NAD+','CJC / Ipamorelin'], workout: 'Recovery Walk + Core', type: 'recovery', fasting: 'Fasted (water only) \u2022 inject 30min before walk' },
-    6: { window: 'morning', shots: ['AOD-9604','5-Amino-1MQ','MOTS-c','CJC / Ipamorelin'], workout: 'Calisthenics (Power)', type: 'training', fasting: 'Fasted (water only) \u2022 inject 30min before activity' }
+    0: { window: 'morning', shots: ['SS-31','AOD-9604','Tesamorelin','Wolverine'], workout: '60\u201390 min Walk (8:15 AM) \u2022 6,800+ steps', type: 'walk', fasting: 'Fasted (water only) \u2022 shots 7:30 AM, walk 8:15 AM \u2022 NAD+ 9:30 AM w/ protein \u2022 2hr fast before bedtime shots' },
+    1: { window: 'morning', shots: ['Retatrutide','SS-31','AOD-9604','MOTS-c','Semax','NAD+','Tesamorelin','Wolverine'], workout: '60\u201390 min Walk (8:15 AM) \u2022 6,800+ steps', type: 'walk', fasting: 'Fasted (water only) \u2022 shots 7:30 AM, walk 8:15 AM \u2022 NAD+ 9:30 AM w/ protein \u2022 2hr fast before bedtime shots' },
+    2: { window: 'morning', shots: ['SS-31','AOD-9604','MOTS-c','Semax','Tesamorelin','Wolverine'], workout: '60\u201390 min Walk (8:15 AM) \u2022 6,800+ steps', type: 'walk', fasting: 'Fasted (water only) \u2022 shots 7:30 AM, walk 8:15 AM \u2022 NAD+ 9:30 AM w/ protein \u2022 2hr fast before bedtime shots' },
+    3: { window: 'morning', shots: ['SS-31','AOD-9604','Semax','NAD+','Tesamorelin','Wolverine'], workout: '60\u201390 min Walk (8:15 AM) \u2022 6,800+ steps', type: 'walk', fasting: 'Fasted (water only) \u2022 shots 7:30 AM, walk 8:15 AM \u2022 NAD+ 9:30 AM w/ protein \u2022 2hr fast before bedtime shots' },
+    4: { window: 'morning', shots: ['SS-31','AOD-9604','MOTS-c','Semax','Tesamorelin','Wolverine'], workout: '60\u201390 min Walk (8:15 AM) \u2022 6,800+ steps', type: 'walk', fasting: 'Fasted (water only) \u2022 shots 7:30 AM, walk 8:15 AM \u2022 NAD+ 9:30 AM w/ protein \u2022 2hr fast before bedtime shots' },
+    5: { window: 'morning', shots: ['SS-31','AOD-9604','Semax','NAD+','Tesamorelin','Wolverine'], workout: '60\u201390 min Walk (8:15 AM) \u2022 6,800+ steps', type: 'walk', fasting: 'Fasted (water only) \u2022 shots 7:30 AM, walk 8:15 AM \u2022 NAD+ 9:30 AM w/ protein \u2022 2hr fast before bedtime shots' },
+    6: { window: 'morning', shots: ['SS-31','AOD-9604','MOTS-c','Tesamorelin','Wolverine'], workout: '60\u201390 min Walk (8:15 AM) \u2022 6,800+ steps', type: 'walk', fasting: 'Fasted (water only) \u2022 shots 7:30 AM, walk 8:15 AM \u2022 NAD+ 9:30 AM w/ protein \u2022 2hr fast before bedtime shots' }
 };
 
 const KAREN_SCHEDULE = {
@@ -2673,16 +2675,20 @@ function updateMixCalc() {
 // dose/pull/freq; legacy household sizes carry just the mix ratio.
 // Keep in sync with docs/Master-Mixing-Reference.md.
 const RECON_REFERENCE = {
-    // Current concentrated SubQ stack (270 lb)
+    // Phase 1 Protocol (Weeks 1–4, from 2026-11-16) — verified inventory
+    'Retatrutide||20mg':      { conc: 20,  dose: '5.0 mg',      pull: '25 units', freq: '1×/week (Mon)' },
     'Retatrutide||30mg':      { conc: 20,  dose: '5.0 mg',      pull: '25 units', freq: '1×/week (Mon)' },
+    'SS-31||50mg':            { conc: 20,  dose: '2.0–4.0 mg',  pull: '10–20 units', freq: 'Daily' },
     'AOD-9604||10mg':         { conc: 5,   dose: '500 mcg',     pull: '10 units', freq: 'Daily' },
-    '5-Amino-1MQ||50mg':      { conc: 20,  dose: '5.0 mg',      pull: '25 units', freq: 'Daily' },
-    'MOTS-c||40mg':           { conc: 10,  dose: '0.5 mg',      pull: '5 units (10u @ 8mL)', freq: '4×/week (M/T/Th/S)' },
+    'Semax||5mg':             { conc: 5,   dose: '250–500 mcg', pull: '5–10 units', freq: '5×/week (Mon–Fri)' },
+    'MOTS-c||40mg':           { conc: 10,  dose: '1.0 mg',      pull: '10 units', freq: '4×/week (M/T/Th/S)' },
     'NAD+||1000mg':           { conc: 400, dose: '100 mg',      pull: '25 units', freq: '3×/week (M/W/F)' },
-    'CJC / Ipamorelin||10mg': { conc: 5,   dose: '250 mcg ea.', pull: '10 units', freq: 'Daily' },
+    'Tesamorelin||10mg':      { conc: 5,   dose: '1.0 mg',      pull: '20 units', freq: 'Daily (bedtime)' },
+    'Wolverine||20mg':        { conc: 10,  dose: '500 mcg ea.', pull: '10 units', freq: 'Daily (bedtime)' },
+    // Held for Phase 2
+    '5-Amino-1MQ||50mg':      { conc: 20,  dose: '5.0 mg',      pull: '25 units', freq: 'Held (Phase 2)' },
+    'CJC / Ipamorelin||10mg': { conc: 5,   dose: '250 mcg ea.', pull: '10 units', freq: 'Held (Phase 2)' },
     // Legacy household sizes (mix ratio only)
-    'Retatrutide||20mg':      { conc: 10 },
-    'Wolverine||20mg':        { conc: 10 },
     'MOTS-c||15mg':           { conc: 10 },
     'Diamond Glow||70mg':     { conc: 10 },
     'Tirzepatide||10mg':      { conc: 5  },

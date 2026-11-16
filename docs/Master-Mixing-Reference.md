@@ -4,26 +4,34 @@
 > Reconstitute Master Vial form) mirrors the **Concentrated SubQ Stack** table
 > below. Update both together.
 
-## Concentrated SubQ Stack (270 lb) — Current
+## Phase 1 Protocol (Weeks 1–4) — Current (started 2026-11-16)
+
+Source: *Phase 1 Protocol Schedule.pdf* — Mitochondrial Foundation, Direct Lipolysis & Visceral Adipose Targeting (LC-526 held pending lab).
+Targets: baseline 270 lb · 6,800+ steps/day · 120–130 oz water · 180–200 g protein.
 
 All masters use bacteriostatic (BAC) water. Recommended BAC water = vial mg ÷ target concentration.
 
-| Peptide / Compound | Vial Size | BAC Water | Concentration | Target Dose | Syringe Pull | Frequency |
+| Compound | Vial | BAC Water | Concentration | Target Dose | Syringe Pull | Frequency |
 |---|---|---|---|---|---|---|
-| Retatrutide | 30mg | 1.5 mL | 20 mg/mL | 5.0 mg | 25 units | 1×/week (Mon) |
+| Retatrutide | 20mg (1st) / 30mg | 1.0 / 1.5 mL | 20 mg/mL | 5.0 mg | 25 units | 1×/week (Mon) |
+| SS-31 (2S-50) | 50mg | 2.5 mL | 20 mg/mL | 2.0–4.0 mg | 10–20 units | Daily |
 | AOD-9604 | 10mg | 2.0 mL | 5 mg/mL | 500 mcg | 10 units | Daily |
-| 5-Amino-1MQ | 50mg | 2.5 mL | 20 mg/mL | 5.0 mg | 25 units | Daily |
-| MOTS-c | 40mg | 4.0 mL | 10 mg/mL | 0.5 mg | 5 units (or 10u @ 8mL) | 4×/week (M/T/Th/S) |
-| NAD+ | 1,000mg | 2.5 mL | 400 mg/mL | 100 mg | 25 units | 3×/week (M/W/F) |
-| CJC / Ipamorelin | 10mg (5/5) | 2.0 mL | 5 mg/mL | 250 mcg ea. | 10 units | Daily |
+| Semax | 5mg | 1.0 mL | 5 mg/mL | 250–500 mcg | 5–10 units | Mon–Fri |
+| MOTS-c | 40mg | 4.0 mL | 10 mg/mL | 1.0 mg | 10 units | Mon/Tue/Thu/Sat |
+| NAD+ | 1,000mg | 2.5 mL | 400 mg/mL | 100 mg | 25 units | Mon/Wed/Fri |
+| Tesamorelin | 10mg | 2.0 mL | 5 mg/mL | 1.0 mg | 20 units | Daily (bedtime) |
+| Wolverine (BPC-157 / TB-500) | 20mg (10/10) | 2.0 mL | 10 mg/mL total | 500 mcg ea. | 10 units | Daily (bedtime) |
 
-### Optimized 7:30 AM Flow
+Held for Phase 2: 5-Amino-1MQ, CJC / Ipamorelin, LC-526.
 
-- **07:30 AM (fasted):** AOD-9604 (10u) + 5-Amino-1MQ (25u) + MOTS-c (5u, M/T/Th/S) + Retatrutide (25u, Mon only). Space sites 1–2" apart across lower abdomen.
-- **07:45 AM:** 16–20 oz water (zero calories/creamers).
-- **08:15 AM:** Morning walk / movement.
-- **09:30 AM (post-walk / breakfast):** NAD+ (25u, M/W/F) SubQ with/after first protein meal to buffer sting.
-- **10:00 PM (bedtime):** CJC / Ipamorelin (10u), strictly 2+ hours after last meal.
+### Daily Flow
+
+- **07:30 AM (fasted, lower abdomen):** SS-31 (10u) + AOD-9604 (10u) daily · Retatrutide (25u, Mon) · MOTS-c (10u, M/T/Th/S) · Semax (5–10u, Mon–Fri).
+- **08:15 AM:** Walk 60–90 min, post-fasted shots.
+- **09:30 AM (post-walk, with first protein meal):** NAD+ (25u, M/W/F).
+- **10:00 PM (bedtime, ≥2 hrs strict fast):** Tesamorelin (20u) + Wolverine (10u) daily.
+
+Receptor spacing: Semax rests Sat/Sun (BDNF); MOTS-c rests Wed/Fri/Sun (AMPK).
 
 ### On/Off Cycling
 
