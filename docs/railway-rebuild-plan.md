@@ -1,6 +1,6 @@
 # Railway Rebuild Plan — Peptide Command Center
 
-**Status:** Planning complete, not yet started.
+**Status:** Phase 1 in progress (2026-11-16): `web` service live at https://web-production-fb7f40c7.up.railway.app serving the legacy app (no-cache) with push-to-deploy from `main`; `/shared` extracted + tested; Railway `Postgres` provisioned (empty). Remaining: data-migration dry run.
 **Created:** 2026-09-19
 **Goal:** Rebuild the app off the single-file monolith and move hosting from GitHub
 Pages + Supabase to a self-hosted stack on a personal Railway account, **without
