@@ -1,0 +1,10 @@
+# Railway service "web": builds railway-app/Dockerfile with the repo root as context.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "railway-app/Dockerfile"
+
+[deploy]
+healthcheckPath = "/healthz"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

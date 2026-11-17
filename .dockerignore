@@ -1,0 +1,10 @@
+.git
+.idea
+.claude
+docs
+supabase
+**/node_modules
+railway-app/dist
+railway-app/drizzle
+**/.env
+**/.env.*

@@ -6,6 +6,7 @@ import { fileURLToPath, URL } from 'node:url';
 // in production and proxies /api during dev.
 export default defineConfig({
   root: 'src/client',
+  base: '/v2/',
   plugins: [react()],
   resolve: {
     alias: { '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)) },
